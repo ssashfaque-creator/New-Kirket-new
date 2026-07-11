@@ -79,59 +79,113 @@ export function solvePhonePose(
     1,
   ]);
   const distCoeffs = cv.Mat.zeros(4, 1, cv.CV_64F);
-  const rvec = new cv.Mat();
-  const tvec = new cv.Mat();
+  const pose = solveBestPnP(cv, objectPoints, imagePoints, cameraMatrix, distCoeffs, pairs);
 
-  const ok = cv.solvePnP(
-    objectPoints,
-    imagePoints,
-    cameraMatrix,
-    distCoeffs,
-    rvec,
-    tvec,
-    false,
-    cv.SOLVEPNP_ITERATIVE,
-  );
-
-  if (!ok) {
-    cleanup(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
+  if (!pose) {
+    cleanup(objectPoints, imagePoints, cameraMatrix, distCoeffs);
     throw new Error("OpenCV could not solve a stable phone pose.");
   }
 
-  const projected = new cv.Mat();
-  cv.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs, projected);
-
-  const errors: number[] = [];
-  for (let i = 0; i < pairs.length; i += 1) {
-    const dx = projected.data64F[i * 2] - pairs[i].image.x;
-    const dy = projected.data64F[i * 2 + 1] - pairs[i].image.y;
-    errors.push(Math.hypot(dx, dy));
-  }
-
   const rotationMatrix = new cv.Mat();
-  cv.Rodrigues(rvec, rotationMatrix);
+  cv.Rodrigues(pose.rvec, rotationMatrix);
 
   const cameraPosition = invertPose(rotationMatrix.data64F, [
-    tvec.data64F[0],
-    tvec.data64F[1],
-    tvec.data64F[2],
+    pose.tvec.data64F[0],
+    pose.tvec.data64F[1],
+    pose.tvec.data64F[2],
   ]);
 
   const result: PoseResult = {
     ok: true,
     usedPoints: pairs.map(({ id }) => id),
     intrinsics,
-    rvec: [rvec.data64F[0], rvec.data64F[1], rvec.data64F[2]],
-    tvec: [tvec.data64F[0], tvec.data64F[1], tvec.data64F[2]],
+    rvec: [pose.rvec.data64F[0], pose.rvec.data64F[1], pose.rvec.data64F[2]],
+    tvec: [pose.tvec.data64F[0], pose.tvec.data64F[1], pose.tvec.data64F[2]],
     cameraPositionWorldInches: cameraPosition,
     distanceToMiddleStumpInches: Math.hypot(cameraPosition.x, cameraPosition.y),
     cameraHeightInches: cameraPosition.z,
-    reprojectionErrorPx: mean(errors),
-    maxReprojectionErrorPx: Math.max(...errors),
+    reprojectionErrorPx: mean(pose.errors),
+    maxReprojectionErrorPx: Math.max(...pose.errors),
   };
 
-  cleanup(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec, projected, rotationMatrix);
+  cleanup(objectPoints, imagePoints, cameraMatrix, distCoeffs, pose.rvec, pose.tvec, pose.projected, rotationMatrix);
   return result;
+}
+
+function solveBestPnP(
+  cv: OpenCv,
+  objectPoints: any,
+  imagePoints: any,
+  cameraMatrix: any,
+  distCoeffs: any,
+  pairs: ReturnType<typeof buildObjectImagePairs>,
+):
+  | {
+      rvec: any;
+      tvec: any;
+      projected: any;
+      errors: number[];
+    }
+  | undefined {
+  const flags = [cv.SOLVEPNP_SQPNP, cv.SOLVEPNP_EPNP, cv.SOLVEPNP_ITERATIVE].filter(
+    (flag, index, all) => Number.isFinite(flag) && all.indexOf(flag) === index,
+  );
+
+  let best:
+    | {
+        rvec: any;
+        tvec: any;
+        projected: any;
+        errors: number[];
+      }
+    | undefined;
+
+  for (const flag of flags) {
+    const rvec = new cv.Mat();
+    const tvec = new cv.Mat();
+    const projected = new cv.Mat();
+
+    try {
+      const ok = cv.solvePnP(
+        objectPoints,
+        imagePoints,
+        cameraMatrix,
+        distCoeffs,
+        rvec,
+        tvec,
+        false,
+        flag,
+      );
+      if (!ok) {
+        cleanup(rvec, tvec, projected);
+        continue;
+      }
+
+      cv.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs, projected);
+      const errors = projectionErrors(projected, pairs);
+
+      if (!best || mean(errors) < mean(best.errors)) {
+        cleanup(best?.rvec, best?.tvec, best?.projected);
+        best = { rvec, tvec, projected, errors };
+      } else {
+        cleanup(rvec, tvec, projected);
+      }
+    } catch {
+      cleanup(rvec, tvec, projected);
+    }
+  }
+
+  return best;
+}
+
+function projectionErrors(projected: any, pairs: ReturnType<typeof buildObjectImagePairs>): number[] {
+  const errors: number[] = [];
+  for (let i = 0; i < pairs.length; i += 1) {
+    const dx = projected.data64F[i * 2] - pairs[i].image.x;
+    const dy = projected.data64F[i * 2 + 1] - pairs[i].image.y;
+    errors.push(Math.hypot(dx, dy));
+  }
+  return errors;
 }
 
 function invertPose(rotationData: Float64Array, tvec: [number, number, number]): Point3D {
