@@ -1,3 +1,12 @@
+import { useMemo, useState } from "react";
+import {
+  defaultShotInput,
+  shotTypeDefaults,
+  simulateShot,
+  type ShotInput,
+  type ShotType,
+  type TrajectoryPoint,
+} from "./shotSimulation";
 import { boundaryRadiusAtAngle, FIELD_PRESETS, GROUND_PRESETS } from "./virtualGround";
 import type { FieldPreset, FieldingPosition, GroundPreset } from "./virtualGround";
 
@@ -20,9 +29,12 @@ export function VirtualGround({
   onGroundChange,
   onFieldChange,
 }: VirtualGroundProps) {
+  const [shot, setShot] = useState<ShotInput>(defaultShotInput());
   const boundaryPoints = buildBoundaryPoints(ground);
   const maxBoundary = Math.max(ground.squareBoundaryM, ground.straightBoundaryM);
   const areaM2 = Math.PI * ground.squareBoundaryM * ground.straightBoundaryM;
+  const simulation = useMemo(() => simulateShot(shot, ground, field), [field, ground, shot]);
+  const trajectoryPoints = simulation.trajectory.map(trajectoryPointToSvg).join(" ");
 
   return (
     <section className="virtual-ground card">
@@ -54,6 +66,76 @@ export function VirtualGround({
               </option>
             ))}
           </select>
+        </label>
+      </div>
+
+      <div className="shot-controls">
+        <label>
+          Shot type
+          <select
+            value={shot.shotType}
+            onChange={(event) => {
+              const shotType = event.target.value as ShotType;
+              setShot((current) => ({ ...current, shotType, ...shotTypeDefaults(shotType) }));
+            }}
+          >
+            <option value="drive">Drive</option>
+            <option value="lofted">Lofted</option>
+            <option value="pull">Pull</option>
+            <option value="cut">Cut</option>
+            <option value="defensive">Defensive</option>
+          </select>
+        </label>
+
+        <label>
+          Direction
+          <strong>{Math.round(shot.angleDegrees)} deg</strong>
+          <input
+            min="0"
+            max="359"
+            type="range"
+            value={shot.angleDegrees}
+            onChange={(event) => setShot((current) => ({ ...current, angleDegrees: Number(event.target.value) }))}
+          />
+        </label>
+
+        <label>
+          Ball speed
+          <strong>{Math.round(shot.speedMps * 3.6)} km/h</strong>
+          <input
+            min="5"
+            max="60"
+            step="1"
+            type="range"
+            value={shot.speedMps}
+            onChange={(event) => setShot((current) => ({ ...current, speedMps: Number(event.target.value) }))}
+          />
+        </label>
+
+        <label>
+          Launch
+          <strong>{Math.round(shot.launchAngleDegrees)} deg</strong>
+          <input
+            min="-2"
+            max="50"
+            step="1"
+            type="range"
+            value={shot.launchAngleDegrees}
+            onChange={(event) => setShot((current) => ({ ...current, launchAngleDegrees: Number(event.target.value) }))}
+          />
+        </label>
+
+        <label>
+          Contact quality
+          <strong>{Math.round(shot.quality * 100)}%</strong>
+          <input
+            min="0.1"
+            max="1"
+            step="0.05"
+            type="range"
+            value={shot.quality}
+            onChange={(event) => setShot((current) => ({ ...current, quality: Number(event.target.value) }))}
+          />
         </label>
       </div>
 
@@ -109,7 +191,41 @@ export function VirtualGround({
           {field.positions.map((position) => (
             <Fielder key={position.id} position={position} ground={ground} />
           ))}
+
+          <polyline points={trajectoryPoints} className={`shot-trajectory ${simulation.kind}`} />
+
+          {simulation.landingPoint ? (
+            <circle
+              cx={trajectoryPointToSvgPoint(simulation.landingPoint).x}
+              cy={trajectoryPointToSvgPoint(simulation.landingPoint).y}
+              r="7"
+              className="shot-landing"
+            />
+          ) : null}
+
+          {simulation.boundaryPoint ? (
+            <circle
+              cx={trajectoryPointToSvgPoint(simulation.boundaryPoint).x}
+              cy={trajectoryPointToSvgPoint(simulation.boundaryPoint).y}
+              r="9"
+              className="shot-boundary"
+            />
+          ) : null}
+
+          {simulation.bestFielder ? (
+            <circle
+              cx={metersToSvgPoint(simulation.bestFielder.xM, simulation.bestFielder.yM).x}
+              cy={metersToSvgPoint(simulation.bestFielder.xM, simulation.bestFielder.yM).y}
+              r="11"
+              className="shot-intercept"
+            />
+          ) : null}
         </svg>
+      </div>
+
+      <div className={`simulation-result ${simulation.kind}`}>
+        <strong>{simulation.runs} run{simulation.runs === 1 ? "" : "s"} - {simulation.kind.toUpperCase()}</strong>
+        <span>{simulation.description}</span>
       </div>
 
       <dl className="ground-stats">
@@ -128,6 +244,14 @@ export function VirtualGround({
         <div>
           <dt>Field mode</dt>
           <dd>{field.aggression} / {field.bowlingStyle}</dd>
+        </div>
+        <div>
+          <dt>Best fielder</dt>
+          <dd>{simulation.bestFielder ? simulation.bestFielder.label : "none"}</dd>
+        </div>
+        <div>
+          <dt>Confidence</dt>
+          <dd>{Math.round(simulation.confidence * 100)}%</dd>
         </div>
       </dl>
 
@@ -166,6 +290,22 @@ function polarPoint(angleDegrees: number, distanceM: number) {
   return {
     x: CENTER + Math.sin(radians) * distanceM * METERS_TO_PIXELS,
     y: CENTER - Math.cos(radians) * distanceM * METERS_TO_PIXELS,
+  };
+}
+
+function trajectoryPointToSvg(point: TrajectoryPoint): string {
+  const svgPoint = trajectoryPointToSvgPoint(point);
+  return `${svgPoint.x.toFixed(1)},${svgPoint.y.toFixed(1)}`;
+}
+
+function trajectoryPointToSvgPoint(point: TrajectoryPoint) {
+  return metersToSvgPoint(point.xM, point.yM);
+}
+
+function metersToSvgPoint(xM: number, yM: number) {
+  return {
+    x: CENTER + xM * METERS_TO_PIXELS,
+    y: CENTER - yM * METERS_TO_PIXELS,
   };
 }
 

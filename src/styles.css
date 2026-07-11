@@ -441,20 +441,33 @@ h2 {
   margin: 1rem 0;
 }
 
-.ground-controls label {
+.ground-controls label,
+.shot-controls label {
   display: grid;
   gap: 0.45rem;
   color: #cbd5e1;
   font-weight: 800;
 }
 
-.ground-controls select {
+.ground-controls select,
+.shot-controls select {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 16px;
   padding: 0.8rem;
   color: #f8fafc;
   background: rgba(2, 6, 23, 0.76);
+}
+
+.shot-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 0 0 1rem;
+}
+
+.shot-controls strong {
+  color: #f8fafc;
 }
 
 .ground-stage {
@@ -522,6 +535,73 @@ h2 {
   stroke-width: 5;
 }
 
+.shot-trajectory {
+  fill: none;
+  stroke: #fbbf24;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 5;
+}
+
+.shot-trajectory.six {
+  stroke: #f97316;
+}
+
+.shot-trajectory.four {
+  stroke: #fde047;
+}
+
+.shot-trajectory.caught {
+  stroke: #ef4444;
+}
+
+.shot-landing {
+  fill: #f8fafc;
+  stroke: #020617;
+  stroke-width: 3;
+}
+
+.shot-boundary {
+  fill: #f97316;
+  stroke: #f8fafc;
+  stroke-width: 3;
+}
+
+.shot-intercept {
+  fill: none;
+  stroke: #ef4444;
+  stroke-width: 5;
+}
+
+.simulation-result {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  padding: 0.95rem;
+  background: rgba(2, 6, 23, 0.36);
+}
+
+.simulation-result strong {
+  color: #f8fafc;
+}
+
+.simulation-result span {
+  color: #cbd5e1;
+}
+
+.simulation-result.six,
+.simulation-result.four {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.simulation-result.caught {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+
 .ground-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -573,6 +653,7 @@ h2 {
   }
 
   .ground-controls,
+  .shot-controls,
   .ground-stats {
     grid-template-columns: 1fr;
   }

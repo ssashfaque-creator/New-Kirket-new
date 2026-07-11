@@ -53,6 +53,14 @@ system.
     leg-side trap setups
   - visual boundary, pitch, range rings, and fielder map
   - visible ground metrics for straight/square boundary and approximate area
+- Provides shot simulation logic before video shot detection exists:
+  - manual shot controls for type, direction, ball speed, launch angle, and
+    contact quality
+  - airborne flight, bounce, roll, and slowdown model
+  - fielder reaction, movement, catching, ground interception, and run estimate
+  - boundary result decisions for four/six and fielded/caught outcomes
+  - trajectory, landing, boundary, and interception markers on the virtual
+    ground
 
 ## Accuracy notes
 
@@ -84,6 +92,8 @@ Recommended workflow:
 6. Correct `creaseLeft` / `creaseRight` if the overlay angle needs adjustment.
 7. Run calibration and inspect the dimension labels.
 8. Select a virtual ground and field preset to define the match environment.
+9. Use the shot simulator controls to test how a future detected shot would
+   travel, interact with fielders, and produce a result.
 
 ## Run locally
 
