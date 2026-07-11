@@ -300,6 +300,32 @@ h2 {
   margin: 1rem 0;
 }
 
+.detection-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.detection-stats div {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  padding: 0.7rem;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.detection-stats dt {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.detection-stats dd {
+  margin: 0.2rem 0 0;
+  color: #f8fafc;
+  font-weight: 800;
+}
+
 .results-card dl div {
   display: grid;
   gap: 0.15rem;
@@ -339,6 +365,12 @@ h2 {
   margin: 0 0 1rem;
   padding-left: 1rem;
   color: #fde68a;
+  line-height: 1.45;
+}
+
+.hint {
+  margin: 0.85rem 0 0;
+  color: #bae6fd;
   line-height: 1.45;
 }
 

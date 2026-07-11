@@ -6,7 +6,7 @@ import {
   LANDMARK_ORDER,
   MIN_POSE_POINTS,
 } from "./calibration/constants";
-import { defaultLandmarks, detectCandidateLines } from "./calibration/autoDetect";
+import { defaultLandmarks, detectSetupLandmarks, type SetupDetectionResult } from "./calibration/autoDetect";
 import { buildCalibrationExport } from "./calibration/exportCalibration";
 import { calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
@@ -36,6 +36,7 @@ function App() {
   const [selectedLandmark, setSelectedLandmark] = useState<LandmarkId>("middleStumpBase");
   const [draggingLandmark, setDraggingLandmark] = useState<LandmarkId | undefined>();
   const [candidateLines, setCandidateLines] = useState<CandidateLine[]>([]);
+  const [detection, setDetection] = useState<SetupDetectionResult>();
   const [result, setResult] = useState<CalibrationResult>();
   const [status, setStatus] = useState("Load a camera photo to begin.");
   const [assumedFov, setAssumedFov] = useState(DEFAULT_CAMERA_FOV_DEGREES);
@@ -52,6 +53,7 @@ function App() {
       return url;
     });
     setCandidateLines([]);
+    setDetection(undefined);
     setResult(undefined);
     setStatus("Image loaded. Confirm the landmark handles before solving.");
   }
@@ -72,6 +74,7 @@ function App() {
       ...current,
       [id]: point,
     }));
+    setDetection(undefined);
     setResult(undefined);
   }
 
@@ -114,15 +117,25 @@ function App() {
     setDraggingLandmark(undefined);
   }
 
-  async function runDetectLines() {
+  async function runDetectSetup() {
     const image = imageRef.current;
     if (!image) return;
-    setStatus("Loading OpenCV and detecting candidate lines...");
-    const cv = await loadOpenCv();
-    const lines = detectCandidateLines(cv, image);
-    setCandidateLines(lines);
+    setStatus("Detecting wooden stumps and bat from this net setup...");
+    const nextDetection = detectSetupLandmarks(image);
+    setDetection(nextDetection);
+    setCandidateLines(nextDetection.candidateLines);
+    setLandmarks((current) => ({
+      ...current,
+      ...nextDetection.landmarks,
+    }));
     setShowCandidates(true);
-    setStatus(`Detected ${lines.length} candidate edges. Drag handles onto the exact bat/stump points.`);
+    setStatus(
+      nextDetection.detectedStumpCount >= 2
+        ? `Auto-detected ${nextDetection.detectedStumpCount} stump columns${
+            nextDetection.detectedBat ? " and the bat tip" : ""
+          }. Correct every handle before calibration.`
+        : "Auto-detection could not lock onto the wicket; use the manual handles.",
+    );
   }
 
   async function runRefine() {
@@ -183,11 +196,19 @@ function App() {
       <section className="workspace-grid">
         <div className="image-panel">
           <div className="toolbar">
-            <button disabled={!imageUrl} onClick={() => imageSize && setLandmarks(defaultLandmarks(imageSize))}>
+            <button
+              disabled={!imageUrl}
+              onClick={() => {
+                if (!imageSize) return;
+                setLandmarks(defaultLandmarks(imageSize));
+                setDetection(undefined);
+                setCandidateLines([]);
+              }}
+            >
               Reset handles
             </button>
-            <button disabled={!imageUrl} onClick={runDetectLines}>
-              Detect candidates
+            <button disabled={!imageUrl} onClick={runDetectSetup}>
+              Auto-detect setup
             </button>
             <button disabled={!imageUrl} onClick={runRefine}>
               Refine points
@@ -270,6 +291,8 @@ function App() {
           <section className="card">
             <h2>Calibration checklist</h2>
             <ol className="steps">
+              <li>Tap <strong>Auto-detect setup</strong> to get stump/bat suggestions.</li>
+              <li>Manually drag every handle onto the exact visible point.</li>
               <li>Bat end touches the middle stump base.</li>
               <li>Bat lies flat and points along the pitch center line.</li>
               <li>Mark bases and tops of visible stumps as precisely as possible.</li>
@@ -300,6 +323,34 @@ function App() {
               })}
             </div>
           </section>
+
+          {detection ? (
+            <section className="card">
+              <div className="section-heading">
+                <h2>Auto-detection</h2>
+                <span>{Math.round(detection.confidence * 100)}% confidence</span>
+              </div>
+              <dl className="detection-stats">
+                <div>
+                  <dt>Stump columns</dt>
+                  <dd>{detection.detectedStumpCount} detected</dd>
+                </div>
+                <div>
+                  <dt>Bat tip</dt>
+                  <dd>{detection.detectedBat ? "suggested" : "manual correction needed"}</dd>
+                </div>
+              </dl>
+              {detection.warnings.length ? (
+                <ul className="warnings">
+                  {detection.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="hint">Suggestions are ready. Drag handles to the exact points before solving.</p>
+              )}
+            </section>
+          ) : null}
 
           <section className="card">
             <h2>Accuracy controls</h2>
