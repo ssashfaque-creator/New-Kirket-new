@@ -48,6 +48,8 @@ const SUBPIXEL_REFINABLE_LANDMARKS: LandmarkId[] = [
 function App() {
   const restoredSession = useRef(loadSession()).current;
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string>();
   const [imageSize, setImageSize] = useState<ImageSize | undefined>(restoredSession?.imageSize);
   const [landmarks, setLandmarks] = useState<LandmarkMap>(restoredSession?.landmarks ?? {});
@@ -402,15 +404,29 @@ function App() {
             phone position, and calibration quality.
           </p>
         </div>
-        <label className="file-button">
+        <div className="hero-actions">
           <input
+            ref={cameraInputRef}
             accept="image/*"
             capture="environment"
             type="file"
+            className="visually-hidden-input"
             onChange={(event) => handleFile(event.target.files?.[0])}
           />
-          Open camera / choose setup photo
-        </label>
+          <input
+            ref={uploadInputRef}
+            accept="image/*"
+            type="file"
+            className="visually-hidden-input"
+            onChange={(event) => handleFile(event.target.files?.[0])}
+          />
+          <button className="hero-action primary-hero-action" onClick={() => cameraInputRef.current?.click()}>
+            Take setup photo
+          </button>
+          <button className="hero-action secondary-hero-action" onClick={() => uploadInputRef.current?.click()}>
+            Upload image
+          </button>
+        </div>
       </section>
 
       <section className="workspace-grid">
