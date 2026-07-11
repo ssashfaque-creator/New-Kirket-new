@@ -183,6 +183,38 @@ h2 {
   stroke-opacity: 0.95;
 }
 
+.pitch-overlay-line {
+  fill: none;
+  pointer-events: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.pitch-overlay-line.pitch {
+  stroke: rgba(14, 165, 233, 0.78);
+  stroke-dasharray: 18 12;
+}
+
+.pitch-overlay-line.crease {
+  stroke: rgba(248, 250, 252, 0.92);
+}
+
+.pitch-overlay-line.center {
+  stroke: rgba(34, 197, 94, 0.85);
+  stroke-dasharray: 10 10;
+}
+
+.pitch-label {
+  fill: #e0f2fe;
+  font-size: 18px;
+  font-weight: 900;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: #020617;
+  stroke-width: 6;
+}
+
 .landmark {
   fill: rgba(56, 189, 248, 0.9);
   stroke: #f8fafc;

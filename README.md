@@ -21,10 +21,15 @@ system.
   - groups fragmented stump pixels vertically when the net cuts through them
   - proposes bat tip only when the wooden component touches the middle-stump
     base
+  - can make a low-confidence side-angle bat suggestion from a horizontal
+    turf-level blade when the contact point is hidden by the net
   - reports low confidence/warnings instead of guessing on unsuitable frames
 - Uses the 33.5 inch bat as the physical scale reference.
 - Uses stump height/width plus the bat reference in `solvePnP` to estimate phone
   position relative to the middle stump.
+- Projects real cricket pitch geometry back onto the camera image after pose
+  solve, including pitch edges, centre line, bowling crease, popping crease,
+  return creases, and the far wicket creases.
 - Reports average and maximum reprojection error so inaccurate calibrations are
   visible immediately.
 - Exports calibration JSON for future game-simulation steps.

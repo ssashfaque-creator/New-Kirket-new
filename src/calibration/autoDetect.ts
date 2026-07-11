@@ -21,12 +21,19 @@ type StumpCandidate = {
   area: number;
 };
 
+type BatCandidate = {
+  tip: Point2D;
+  toe?: Point2D;
+  confidence: "strong" | "weak";
+};
+
 export type SetupDetectionResult = {
   landmarks: LandmarkMap;
   candidateLines: CandidateLine[];
   confidence: number;
   detectedStumpCount: number;
   detectedBat: boolean;
+  batConfidence?: "strong" | "weak";
   warnings: string[];
 };
 
@@ -99,12 +106,13 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
 
   const stumpCandidates = findStumpCandidates(mask, components, scaled.width, scaled.height);
   const selectedStumps = selectStumpSet(stumpCandidates, scaled.width, scaled.height);
+  const fallbackStumps = selectedStumps.length >= 2 ? selectedStumps : selectSingleStump(stumpCandidates);
   const warnings: string[] = [];
   const landmarks: LandmarkMap = {};
   const candidateLines: CandidateLine[] = [];
 
-  if (selectedStumps.length >= 2) {
-    const [left, middle, right] = normalizeThreeStumps(selectedStumps);
+  if (fallbackStumps.length >= 1) {
+    const [left, middle, right] = normalizeThreeStumps(fallbackStumps);
     landmarks.offStumpBase = scalePoint({ x: left.x, y: left.baseY }, scaled.scale);
     landmarks.offStumpTop = scalePoint({ x: left.x, y: left.topY }, scaled.scale);
     landmarks.middleStumpBase = scalePoint({ x: middle.x, y: middle.baseY }, scaled.scale);
@@ -128,23 +136,29 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
       );
     }
 
-    const batTip = findBatTip(mask, labels, components, selectedStumps, scaled.width, scaled.height);
-    if (batTip) {
-      landmarks.batTip = scalePoint(batTip, scaled.scale);
+    const bat = findBatTip(mask, labels, components, fallbackStumps, scaled.width, scaled.height);
+    if (bat) {
+      if (bat.toe && selectedStumps.length < 2) {
+        landmarks.middleStumpBase = scalePoint(bat.toe, scaled.scale);
+      }
+      landmarks.batTip = scalePoint(bat.tip, scaled.scale);
       const middleBase = { x: middle.x, y: middle.baseY };
       candidateLines.push(
         scaleLine(
           {
             id: "wood-bat-reference",
-            start: middleBase,
-            end: batTip,
-            lengthPx: distance(middleBase, batTip),
-            angleDegrees: normalizeAngleDegrees(angleDegrees(middleBase, batTip)),
+            start: bat.toe ?? middleBase,
+            end: bat.tip,
+            lengthPx: distance(bat.toe ?? middleBase, bat.tip),
+            angleDegrees: normalizeAngleDegrees(angleDegrees(bat.toe ?? middleBase, bat.tip)),
             classification: "bat",
           },
           scaled.scale,
         ),
       );
+      if (bat.confidence === "weak") {
+        warnings.push("Side-angle bat suggestion is weak; drag batTip and middle stump base carefully.");
+      }
     } else {
       warnings.push("Could not confidently find the far end of the bat; drag the batTip handle.");
     }
@@ -157,19 +171,23 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
   if (selectedStumps.length === 2) {
     warnings.push("Only two stump columns were distinct, so the middle stump was inferred between them.");
   }
+  if (selectedStumps.length === 0 && fallbackStumps.length === 1) {
+    warnings.push("Only one stump column was visible; stump set was estimated from wicket width.");
+  }
 
   const detectedBat = Boolean(landmarks.batTip);
   const confidence = Math.min(
     1,
-    selectedStumps.length / 3 + (detectedBat ? 0.2 : 0) - warnings.length * 0.08,
+    fallbackStumps.length / 3 + (detectedBat ? 0.2 : 0) - warnings.length * 0.08,
   );
 
   return {
     landmarks,
     candidateLines,
     confidence: Math.max(0, confidence),
-    detectedStumpCount: Math.min(3, selectedStumps.length),
+    detectedStumpCount: Math.min(3, fallbackStumps.length),
     detectedBat,
+    batConfidence: detectedBat ? (warnings.some((warning) => warning.includes("weak")) ? "weak" : "strong") : undefined,
     warnings,
   };
 }
@@ -556,9 +574,22 @@ function selectOuterStumpPair(
   return best?.stumps;
 }
 
+function selectSingleStump(candidates: StumpCandidate[]): StumpCandidate[] {
+  return candidates.length ? [candidates[0]] : [];
+}
+
 function normalizeThreeStumps(stumps: StumpCandidate[]): [StumpCandidate, StumpCandidate, StumpCandidate] {
   const sorted = [...stumps].sort((a, b) => a.x - b.x);
   if (sorted.length >= 3) return [sorted[0], sorted[1], sorted[2]];
+  if (sorted.length === 1) {
+    const [middle] = sorted;
+    const spread = Math.max(middle.width * 2.2, middle.height * 0.16);
+    return [
+      { ...middle, x: middle.x - spread },
+      middle,
+      { ...middle, x: middle.x + spread },
+    ];
+  }
 
   const [left, right] = sorted;
   const inferred: StumpCandidate = {
@@ -579,7 +610,7 @@ function findBatTip(
   stumps: StumpCandidate[],
   width: number,
   height: number,
-): Point2D | undefined {
+): BatCandidate | undefined {
   const [left, middle, right] = normalizeThreeStumps(stumps);
   const base = { x: middle.x, y: middle.baseY };
   const stumpHeight = mean([left.height, middle.height, right.height]);
@@ -610,8 +641,174 @@ function findBatTip(
     }
   }
 
-  if (!best || best.distance < stumpHeight * 0.45) return undefined;
-  return best.point;
+  if (best && best.distance >= stumpHeight * 0.45) {
+    return {
+      tip: best.point,
+      confidence: "strong",
+    };
+  }
+
+  return findWeakBatTip(mask, labels, components, stumps, width, height);
+}
+
+function findWeakBatTip(
+  mask: Uint8Array,
+  labels: Int32Array,
+  components: DetectionComponent[],
+  stumps: StumpCandidate[],
+  width: number,
+  height: number,
+): BatCandidate | undefined {
+  const [left, middle, right] = normalizeThreeStumps(stumps);
+  const base = { x: middle.x, y: middle.baseY };
+  const stumpHeight = mean([left.height, middle.height, right.height]);
+  const stumpXs = [left.x, middle.x, right.x];
+  let best:
+    | {
+        score: number;
+        tip: Point2D;
+        toe: Point2D;
+      }
+    | undefined;
+
+  for (const component of components) {
+    const boxWidth = component.maxX - component.minX + 1;
+    const boxHeight = component.maxY - component.minY + 1;
+    const aspect = boxWidth / Math.max(boxHeight, 1);
+    const centerY = component.center.y;
+    if (component.area < 90) continue;
+    if (centerY < height * 0.38 || centerY > height * 0.94) continue;
+    if (boxWidth < width * 0.045 && boxHeight < height * 0.045) continue;
+    if (aspect < 1.7 && boxHeight / Math.max(boxWidth, 1) < 1.7) continue;
+
+    const endpoints = componentExtremePair(mask, labels, component, width);
+    if (!endpoints) continue;
+
+    const [a, b] = endpoints;
+    const distanceA = distance(base, a);
+    const distanceB = distance(base, b);
+    const toe = distanceA <= distanceB ? a : b;
+    const tip = distanceA > distanceB ? a : b;
+    const batLength = distance(toe, tip);
+    if (batLength < Math.max(stumpHeight * 0.35, width * 0.045)) continue;
+
+    const toeDistance = distance(base, toe);
+    const centerDistance = distance(base, component.center);
+    const nearStumpColumn = stumpXs.some((stumpX) => Math.abs(stumpX - toe.x) < middle.width * 5);
+    const baseScore = Math.max(0, 1 - toeDistance / Math.max(width * 0.22, stumpHeight));
+    const lengthScore = Math.min(1, batLength / Math.max(width * 0.16, stumpHeight * 0.9));
+    const sideViewScore = Math.max(0, 1 - centerDistance / Math.max(width * 0.45, stumpHeight * 2.2));
+    const columnBonus = nearStumpColumn ? 0.15 : 0;
+    const score = baseScore * 0.5 + lengthScore * 0.3 + sideViewScore * 0.2 + columnBonus;
+
+    if (score > 0.28 && (!best || score > best.score)) {
+      best = { score, tip, toe };
+    }
+  }
+
+  if (!best) {
+    best = findGlobalBatBlade(mask, labels, components, base, width, height);
+  }
+
+  if (!best) return undefined;
+
+  return {
+    tip: best.tip,
+    toe: best.toe,
+    confidence: "weak",
+  };
+}
+
+function findGlobalBatBlade(
+  mask: Uint8Array,
+  labels: Int32Array,
+  components: DetectionComponent[],
+  base: Point2D,
+  width: number,
+  height: number,
+):
+  | {
+      score: number;
+      tip: Point2D;
+      toe: Point2D;
+    }
+  | undefined {
+  let best:
+    | {
+        score: number;
+        tip: Point2D;
+        toe: Point2D;
+      }
+    | undefined;
+
+  for (const component of components) {
+    const boxWidth = component.maxX - component.minX + 1;
+    const boxHeight = component.maxY - component.minY + 1;
+    const aspect = boxWidth / Math.max(boxHeight, 1);
+    if (component.area < 120) continue;
+    if (component.center.y < height * 0.42 || component.center.y > height * 0.94) continue;
+    if (aspect < 1.45 || boxWidth < width * 0.055 || boxHeight > height * 0.22) continue;
+
+    const endpoints = componentExtremePair(mask, labels, component, width);
+    if (!endpoints) continue;
+
+    const [a, b] = endpoints;
+    const distanceA = distance(base, a);
+    const distanceB = distance(base, b);
+    const toe = distanceA <= distanceB ? a : b;
+    const tip = distanceA > distanceB ? a : b;
+    const batLength = distance(toe, tip);
+    if (batLength < width * 0.08) continue;
+
+    const horizontalness = Math.min(1, aspect / 4);
+    const lengthScore = Math.min(1, batLength / (width * 0.2));
+    const turfScore = Math.max(0, 1 - Math.abs(component.center.y - height * 0.68) / (height * 0.26));
+    const score = horizontalness * 0.35 + lengthScore * 0.45 + turfScore * 0.2;
+
+    if (score > 0.34 && (!best || score > best.score)) {
+      best = { score, tip, toe };
+    }
+  }
+
+  return best;
+}
+
+function componentExtremePair(
+  mask: Uint8Array,
+  labels: Int32Array,
+  component: DetectionComponent,
+  width: number,
+): [Point2D, Point2D] | undefined {
+  const points: Point2D[] = [];
+  for (let y = component.minY; y <= component.maxY; y += 1) {
+    const rowOffset = y * width;
+    for (let x = component.minX; x <= component.maxX; x += 1) {
+      const index = rowOffset + x;
+      if (mask[index] && labels[index] === component.id) {
+        points.push({ x, y });
+      }
+    }
+  }
+
+  if (points.length < 2) return undefined;
+
+  let first = points[0];
+  let second = points[1];
+  let bestDistance = 0;
+  const stride = Math.max(1, Math.floor(points.length / 120));
+
+  for (let i = 0; i < points.length; i += stride) {
+    for (let j = i + stride; j < points.length; j += stride) {
+      const candidateDistance = distance(points[i], points[j]);
+      if (candidateDistance > bestDistance) {
+        bestDistance = candidateDistance;
+        first = points[i];
+        second = points[j];
+      }
+    }
+  }
+
+  return [first, second];
 }
 
 function countPixelsNearPoint(

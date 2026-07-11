@@ -10,6 +10,7 @@ import { defaultLandmarks, detectSetupLandmarks, type SetupDetectionResult } fro
 import { buildCalibrationExport } from "./calibration/exportCalibration";
 import { calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
+import { buildPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
 import type {
   CalibrationResult,
@@ -44,6 +45,10 @@ function App() {
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
+  const pitchOverlayLines = useMemo(
+    () => (result?.pose ? buildPitchOverlayLines(result.pose) : []),
+    [result?.pose],
+  );
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -245,6 +250,24 @@ function App() {
                         />
                       ))}
 
+                    {pitchOverlayLines.map((line) => (
+                      <polyline
+                        key={line.id}
+                        className={`pitch-overlay-line ${line.kind}`}
+                        points={line.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                      />
+                    ))}
+
+                    {pitchOverlayLines.map((line) => {
+                      const point = line.points[Math.floor(line.points.length / 2)];
+                      if (!point) return null;
+                      return (
+                        <text key={`${line.id}-label`} x={point.x + 8} y={point.y - 8} className="pitch-label">
+                          {line.label}
+                        </text>
+                      );
+                    })}
+
                     {landmarks.middleStumpBase && landmarks.batTip && (
                       <line
                         className="measurement-line"
@@ -337,7 +360,13 @@ function App() {
                 </div>
                 <div>
                   <dt>Bat tip</dt>
-                  <dd>{detection.detectedBat ? "suggested" : "manual correction needed"}</dd>
+                  <dd>
+                    {detection.detectedBat
+                      ? detection.batConfidence === "weak"
+                        ? "weak suggestion"
+                        : "suggested"
+                      : "manual correction needed"}
+                  </dd>
                 </div>
               </dl>
               {detection.warnings.length ? (
