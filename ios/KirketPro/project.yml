@@ -19,7 +19,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kirket.pro
-        PRODUCT_NAME: Kirket Pro
+        PRODUCT_NAME: KirketPro
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: false
         GENERATE_INFOPLIST_FILE: true
