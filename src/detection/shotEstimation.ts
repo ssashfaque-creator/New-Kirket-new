@@ -29,11 +29,14 @@ export function estimateShotMeasurement(
   tracking: TrackingSummary,
   options: ShotEstimationOptions,
 ): ShotMeasurement | undefined {
+  if (calibrationAspectWarning(options)) return undefined;
   const normalizedPoints = normalizeTrackedCoordinates(tracking.points, options);
-  const detected = normalizedPoints.filter((point) => !point.predicted && point.confidence >= 0.42);
+  const detected = normalizedPoints.filter(
+    (point) => point.frameIndex >= 0 && !point.predicted && point.confidence >= 0.42,
+  );
   if (detected.length < 4) return undefined;
 
-  if (options.pose && options.pose.reprojectionErrorPx <= 8) {
+  if (options.pose && !options.pose.warning && options.pose.reprojectionErrorPx <= 5 && options.pose.maxReprojectionErrorPx <= 10) {
     const measurement = estimateFromBallSize3d(detected, tracking, options);
     if (measurement) return measurement;
   }
@@ -123,14 +126,20 @@ function estimateFromTurf(
   if (!options.turfPlane) return undefined;
   const groundSamples = points
     .map((point) => ({
+      frameIndex: point.frameIndex,
       timeS: point.timeS,
       ground: imagePointToPitchInches(point.center, options.landmarks, options.turfPlane),
       confidence: point.confidence,
     }))
-    .filter((sample): sample is { timeS: number; ground: { x: number; y: number }; confidence: number } => Boolean(sample.ground));
+    .filter((sample): sample is { frameIndex: number; timeS: number; ground: { x: number; y: number }; confidence: number } => Boolean(sample.ground));
 
   if (groundSamples.length < 4) return undefined;
-  const segment = groundSamples.slice(0, 8);
+  const impactFrameIndex = tracking.impactFrameIndex;
+  const postImpact = impactFrameIndex === undefined
+    ? groundSamples
+    : groundSamples.filter((sample) => sample.frameIndex >= impactFrameIndex);
+  const segment = postImpact.slice(0, 8);
+  if (segment.length < 4) return undefined;
   const velocity = weightedLinearVelocity(
     segment.map((sample) => ({
       timeS: sample.timeS,

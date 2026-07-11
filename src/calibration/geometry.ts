@@ -1,7 +1,6 @@
 import {
   BAT_LENGTH_INCHES,
   DEFAULT_CAMERA_FOV_DEGREES,
-  POPPING_CREASE_DISTANCE_INCHES,
   STUMP_HEIGHT_INCHES,
   WICKET_WIDTH_INCHES,
 } from "./constants";
@@ -23,8 +22,6 @@ export const WORLD_POINTS: Partial<Record<LandmarkId, Point3D>> = {
   legStumpBase: { x: WICKET_WIDTH_INCHES / 2, y: 0, z: 0 },
   legStumpTop: { x: WICKET_WIDTH_INCHES / 2, y: 0, z: STUMP_HEIGHT_INCHES },
   batTip: { x: 0, y: BAT_LENGTH_INCHES, z: 0 },
-  creaseLeft: { x: -WICKET_WIDTH_INCHES, y: POPPING_CREASE_DISTANCE_INCHES, z: 0 },
-  creaseRight: { x: WICKET_WIDTH_INCHES, y: POPPING_CREASE_DISTANCE_INCHES, z: 0 },
 };
 
 export function distance(a: Point2D, b: Point2D): number {

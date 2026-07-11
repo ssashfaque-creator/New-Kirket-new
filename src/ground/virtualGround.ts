@@ -23,6 +23,9 @@ export type FieldPreset = {
   positions: FieldingPosition[];
 };
 
+export const PITCH_LENGTH_M = 20.12;
+export const STRIKER_TO_GROUND_CENTER_M = PITCH_LENGTH_M / 2;
+
 export const GROUND_PRESETS: GroundPreset[] = [
   {
     id: "backyard-compact",
@@ -221,11 +224,35 @@ export const FIELD_PRESETS: FieldPreset[] = [
 
 export function boundaryRadiusAtAngle(ground: GroundPreset, angleDegrees: number): number {
   const radians = (angleDegrees * Math.PI) / 180;
-  const x = Math.sin(radians);
-  const y = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const cos = Math.cos(radians);
   const a = ground.squareBoundaryM;
   const b = ground.straightBoundaryM;
-  return 1 / Math.sqrt((x * x) / (a * a) + (y * y) / (b * b));
+  const centerY = STRIKER_TO_GROUND_CENTER_M;
+  const quadraticA = (sin * sin) / (a * a) + (cos * cos) / (b * b);
+  const quadraticB = (-2 * centerY * cos) / (b * b);
+  const quadraticC = (centerY * centerY) / (b * b) - 1;
+  const discriminant = Math.max(0, quadraticB * quadraticB - 4 * quadraticA * quadraticC);
+  return (-quadraticB + Math.sqrt(discriminant)) / (2 * quadraticA);
+}
+
+export function safeFielderDistance(
+  position: FieldingPosition,
+  ground: GroundPreset,
+): number {
+  return Math.max(2, Math.min(position.distanceM, boundaryRadiusAtAngle(ground, position.angleDegrees) - 3));
+}
+
+export function fielderCoordinates(
+  position: FieldingPosition,
+  ground: GroundPreset,
+) {
+  const radians = (position.angleDegrees * Math.PI) / 180;
+  const distanceM = safeFielderDistance(position, ground);
+  return {
+    xM: Math.sin(radians) * distanceM,
+    yM: Math.cos(radians) * distanceM,
+  };
 }
 
 function pos(

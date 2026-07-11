@@ -1,4 +1,4 @@
-import { boundaryRadiusAtAngle } from "./virtualGround";
+import { boundaryRadiusAtAngle, fielderCoordinates } from "./virtualGround";
 import type { FieldPreset, FieldingPosition, GroundPreset } from "./virtualGround";
 
 export type ShotType = "drive" | "lofted" | "pull" | "cut" | "defensive";
@@ -60,10 +60,10 @@ export function simulateShot(
   const normalized = normalizeInput(input);
   const trajectory = buildTrajectory(normalized, ground);
   const landingPoint = trajectory.find((point) => point.phase === "bounce" || point.phase === "roll");
-  const boundaryPoint = firstBoundaryPoint(trajectory, ground);
-  const catchAttempt = bestCatchAttempt(trajectory, field.positions);
+  const boundaryPoint = interpolatedBoundaryPoint(trajectory, ground);
+  const catchAttempt = bestCatchAttempt(trajectory, field.positions, ground);
 
-  if (catchAttempt && catchAttempt.catchChance >= 0.55 && (!boundaryPoint || catchAttempt.interceptTimeS < boundaryPoint.timeS)) {
+  if (catchAttempt && catchAttempt.catchChance >= 0.72 && (!boundaryPoint || catchAttempt.interceptTimeS < boundaryPoint.timeS)) {
     return {
       kind: "caught",
       runs: 0,
@@ -76,21 +76,22 @@ export function simulateShot(
   }
 
   if (boundaryPoint) {
-    const isSix = boundaryPoint.zM > 1.8 || !landingPoint || landingPoint.timeS > boundaryPoint.timeS;
+    const isSix = !landingPoint || landingPoint.timeS > boundaryPoint.timeS;
+    const visibleTrajectory = truncateTrajectoryAt(trajectory, boundaryPoint);
     return {
       kind: isSix ? "six" : "four",
       runs: isSix ? 6 : 4,
       description: isSix
         ? `Clears the rope at ${Math.round(distanceFromOrigin(boundaryPoint))} m.`
-        : `Reaches the boundary after bouncing at ${Math.round(distanceFromOrigin(boundaryPoint))} m.`,
-      trajectory,
+        : `Bounces at ${Math.round(distanceFromOrigin(landingPoint!))} m and reaches the rope at ${Math.round(distanceFromOrigin(boundaryPoint))} m.`,
+      trajectory: visibleTrajectory,
       landingPoint,
       boundaryPoint,
       confidence: isSix ? 0.9 : 0.86,
     };
   }
 
-  const groundAttempt = bestGroundInterception(trajectory, field.positions);
+  const groundAttempt = bestGroundInterception(trajectory, field.positions, ground);
   if (groundAttempt) {
     const runs = estimateCompletedRuns(groundAttempt);
     const kind: ShotResultKind = groundAttempt.label === "WK" ? "wicketkeeper" : runs === 0 ? "stopped" : "fielded";
@@ -106,7 +107,7 @@ export function simulateShot(
   }
 
   const finalPoint = trajectory[trajectory.length - 1];
-  const runs = Math.min(3, Math.max(1, Math.floor(finalPoint.timeS / BASE_RUN_SECONDS)));
+  const runs = Math.min(3, Math.max(0, Math.floor(distanceFromOrigin(finalPoint) / 20.12)));
   return {
     kind: "fielded",
     runs,
@@ -146,7 +147,7 @@ export function shotTypeDefaults(shotType: ShotType): Partial<ShotInput> {
 function normalizeInput(input: ShotInput): ShotInput {
   return {
     angleDegrees: ((input.angleDegrees % 360) + 360) % 360,
-    speedMps: clamp(input.speedMps * (0.75 + input.quality * 0.35), 4, 65),
+    speedMps: clamp(input.speedMps, 4, 65),
     launchAngleDegrees: clamp(input.launchAngleDegrees, -5, 55),
     quality: clamp(input.quality, 0, 1),
     shotType: input.shotType,
@@ -210,32 +211,75 @@ function bounceSpeedRetention(input: ShotInput): number {
   return 0.58;
 }
 
-function firstBoundaryPoint(
+function interpolatedBoundaryPoint(
   trajectory: TrajectoryPoint[],
   ground: GroundPreset,
 ): TrajectoryPoint | undefined {
-  return trajectory.find((point) => distanceFromOrigin(point) >= boundaryRadiusAtPoint(point, ground));
+  for (let index = 1; index < trajectory.length; index += 1) {
+    const previous = trajectory[index - 1];
+    const current = trajectory[index];
+    if (distanceFromOrigin(current) < boundaryRadiusAtPoint(current, ground)) continue;
+    let low = 0;
+    let high = 1;
+    for (let iteration = 0; iteration < 12; iteration += 1) {
+      const mid = (low + high) / 2;
+      const point = interpolateTrajectory(previous, current, mid);
+      if (distanceFromOrigin(point) >= boundaryRadiusAtPoint(point, ground)) high = mid;
+      else low = mid;
+    }
+    return interpolateTrajectory(previous, current, high);
+  }
+  return undefined;
+}
+
+function interpolateTrajectory(
+  from: TrajectoryPoint,
+  to: TrajectoryPoint,
+  fraction: number,
+): TrajectoryPoint {
+  return {
+    timeS: from.timeS + (to.timeS - from.timeS) * fraction,
+    xM: from.xM + (to.xM - from.xM) * fraction,
+    yM: from.yM + (to.yM - from.yM) * fraction,
+    zM: from.zM + (to.zM - from.zM) * fraction,
+    speedMps: from.speedMps + (to.speedMps - from.speedMps) * fraction,
+    phase: from.phase,
+  };
+}
+
+function truncateTrajectoryAt(
+  trajectory: TrajectoryPoint[],
+  boundaryPoint: TrajectoryPoint,
+): TrajectoryPoint[] {
+  return [
+    ...trajectory.filter((point) => point.timeS < boundaryPoint.timeS),
+    boundaryPoint,
+  ];
 }
 
 function bestCatchAttempt(
   trajectory: TrajectoryPoint[],
   fielders: FieldingPosition[],
+  ground: GroundPreset,
 ): FielderAttempt | undefined {
   return bestAttempt(
     trajectory.filter((point) => point.zM >= 0.8 && point.phase === "air"),
-    fielders.filter((fielder) => fielder.catching || fielder.distanceM < 35),
+    fielders,
     "catch",
+    ground,
   );
 }
 
 function bestGroundInterception(
   trajectory: TrajectoryPoint[],
   fielders: FieldingPosition[],
+  ground: GroundPreset,
 ): FielderAttempt | undefined {
   return bestAttempt(
-    trajectory.filter((point) => point.phase !== "air" || point.zM <= 1.1),
+    trajectory.filter((point) => point.phase !== "air" || point.zM <= 0.3),
     fielders,
     "ground",
+    ground,
   );
 }
 
@@ -243,11 +287,12 @@ function bestAttempt(
   points: TrajectoryPoint[],
   fielders: FieldingPosition[],
   kind: FielderAttempt["kind"],
+  ground: GroundPreset,
 ): FielderAttempt | undefined {
   let best: FielderAttempt | undefined;
 
   for (const fielder of fielders) {
-    const fielderPoint = fielderCoordinates(fielder);
+    const fielderPoint = fielderCoordinates(fielder, ground);
     const reaction = fielder.catching ? 0.35 : 0.62;
     const speed = fielder.catching ? 5.8 : 6.8;
     const pickupRadius = kind === "catch" ? 1.9 : 2.6;
@@ -274,7 +319,6 @@ function bestAttempt(
       };
 
       if (!best || attemptScore(attempt) > attemptScore(best)) best = attempt;
-      break;
     }
   }
 
@@ -313,14 +357,6 @@ function estimateCompletedRuns(attempt: FielderAttempt): number {
 function attemptScore(attempt: FielderAttempt): number {
   if (attempt.kind === "catch") return 100 + attempt.catchChance * 10 - attempt.interceptTimeS;
   return 50 - attempt.interceptTimeS + attempt.runoutChance * 4;
-}
-
-function fielderCoordinates(fielder: FieldingPosition) {
-  const radians = (fielder.angleDegrees * Math.PI) / 180;
-  return {
-    xM: Math.sin(radians) * fielder.distanceM,
-    yM: Math.cos(radians) * fielder.distanceM,
-  };
 }
 
 function boundaryRadiusAtPoint(point: TrajectoryPoint, ground: GroundPreset): number {

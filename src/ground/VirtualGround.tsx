@@ -7,7 +7,13 @@ import {
   type ShotType,
   type TrajectoryPoint,
 } from "./shotSimulation";
-import { boundaryRadiusAtAngle, FIELD_PRESETS, GROUND_PRESETS } from "./virtualGround";
+import {
+  FIELD_PRESETS,
+  GROUND_PRESETS,
+  PITCH_LENGTH_M,
+  STRIKER_TO_GROUND_CENTER_M,
+  fielderCoordinates,
+} from "./virtualGround";
 import type { FieldPreset, FieldingPosition, GroundPreset } from "./virtualGround";
 
 type VirtualGroundProps = {
@@ -21,8 +27,10 @@ type VirtualGroundProps = {
 const VIEW_SIZE = 720;
 const CENTER = VIEW_SIZE / 2;
 const METERS_TO_PIXELS = 3.6;
-const PITCH_LENGTH_M = 20.12;
 const PITCH_WIDTH_M = 3.05;
+const BOWLING_CREASE_HALF_WIDTH_M = 1.32;
+const POPPING_CREASE_DISTANCE_M = 1.22;
+const STRIKER_Y = CENTER + STRIKER_TO_GROUND_CENTER_M * METERS_TO_PIXELS;
 
 export function VirtualGround({
   ground,
@@ -162,7 +170,7 @@ export function VirtualGround({
             <ellipse
               key={radius}
               cx={CENTER}
-              cy={CENTER}
+              cy={STRIKER_Y}
               rx={radius * METERS_TO_PIXELS}
               ry={radius * METERS_TO_PIXELS}
               className="ground-range-ring"
@@ -178,17 +186,17 @@ export function VirtualGround({
               rx="3"
             />
             <line
-              x1={-34}
-              x2={34}
-              y1={(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 - 14}
-              y2={(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 - 14}
+              x1={-BOWLING_CREASE_HALF_WIDTH_M * METERS_TO_PIXELS}
+              x2={BOWLING_CREASE_HALF_WIDTH_M * METERS_TO_PIXELS}
+              y1={(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 - POPPING_CREASE_DISTANCE_M * METERS_TO_PIXELS}
+              y2={(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 - POPPING_CREASE_DISTANCE_M * METERS_TO_PIXELS}
               className="ground-crease"
             />
             <line
-              x1={-34}
-              x2={34}
-              y1={-(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 + 14}
-              y2={-(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 + 14}
+              x1={-BOWLING_CREASE_HALF_WIDTH_M * METERS_TO_PIXELS}
+              x2={BOWLING_CREASE_HALF_WIDTH_M * METERS_TO_PIXELS}
+              y1={-(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 + POPPING_CREASE_DISTANCE_M * METERS_TO_PIXELS}
+              y2={-(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2 + POPPING_CREASE_DISTANCE_M * METERS_TO_PIXELS}
               className="ground-crease"
             />
             <circle cx="0" cy={(PITCH_LENGTH_M * METERS_TO_PIXELS) / 2} r="4" className="striker-dot" />
@@ -267,9 +275,8 @@ export function VirtualGround({
 }
 
 function Fielder({ position, ground }: { position: FieldingPosition; ground: GroundPreset }) {
-  const boundary = boundaryRadiusAtAngle(ground, position.angleDegrees);
-  const safeDistance = Math.min(position.distanceM, boundary - 3);
-  const point = polarPoint(position.angleDegrees, safeDistance);
+  const coordinates = fielderCoordinates(position, ground);
+  const point = metersToSvgPoint(coordinates.xM, coordinates.yM);
 
   return (
     <g className={position.catching ? "fielder catching" : "fielder"}>
@@ -284,19 +291,12 @@ function Fielder({ position, ground }: { position: FieldingPosition; ground: Gro
 function buildBoundaryPoints(ground: GroundPreset): string {
   const points: string[] = [];
   for (let angle = 0; angle < 360; angle += 4) {
-    const radius = boundaryRadiusAtAngle(ground, angle);
-    const point = polarPoint(angle, radius);
-    points.push(`${point.x.toFixed(1)},${point.y.toFixed(1)}`);
+    const radians = (angle * Math.PI) / 180;
+    const x = CENTER + Math.sin(radians) * ground.squareBoundaryM * METERS_TO_PIXELS;
+    const y = CENTER - Math.cos(radians) * ground.straightBoundaryM * METERS_TO_PIXELS;
+    points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
   }
   return points.join(" ");
-}
-
-function polarPoint(angleDegrees: number, distanceM: number) {
-  const radians = (angleDegrees * Math.PI) / 180;
-  return {
-    x: CENTER + Math.sin(radians) * distanceM * METERS_TO_PIXELS,
-    y: CENTER - Math.cos(radians) * distanceM * METERS_TO_PIXELS,
-  };
 }
 
 function trajectoryPointToSvg(point: TrajectoryPoint): string {
@@ -311,7 +311,7 @@ function trajectoryPointToSvgPoint(point: TrajectoryPoint) {
 function metersToSvgPoint(xM: number, yM: number) {
   return {
     x: CENTER + xM * METERS_TO_PIXELS,
-    y: CENTER - yM * METERS_TO_PIXELS,
+    y: STRIKER_Y - yM * METERS_TO_PIXELS,
   };
 }
 

@@ -24,6 +24,8 @@ describe("calibration geometry", () => {
     expect(WORLD_POINTS.batTip).toEqual({ x: 0, y: BAT_LENGTH_INCHES, z: 0 });
     expect(WORLD_POINTS.offStumpBase?.x).toBeLessThan(0);
     expect(WORLD_POINTS.legStumpBase?.x).toBeGreaterThan(0);
+    expect(WORLD_POINTS.creaseLeft).toBeUndefined();
+    expect(WORLD_POINTS.creaseRight).toBeUndefined();
   });
 
   it("estimates a symmetric phone camera matrix from image dimensions and FOV", () => {

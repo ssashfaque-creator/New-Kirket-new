@@ -46,7 +46,12 @@ export function solveCalibration(
   }
 
   return {
-    quality: scoreCalibration(scale, pose?.reprojectionErrorPx),
+    quality:
+      warnings.length > 0
+        ? scale
+          ? "needs-work"
+          : "not-ready"
+        : scoreCalibration(scale, pose?.reprojectionErrorPx),
     scale,
     pose,
     warnings,

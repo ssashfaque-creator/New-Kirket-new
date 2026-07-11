@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TurfPlane } from "../calibration/autoDetect";
 import type { ImageSize, LandmarkMap, PoseResult } from "../calibration/types";
 import type { ShotInput } from "../ground/shotSimulation";
@@ -13,6 +13,7 @@ import {
   type TrackingSummary,
 } from "./ballTracking";
 import { estimateShotMeasurement, type ShotMeasurement } from "./shotEstimation";
+import { buildVideoFramePlan } from "./videoTiming";
 
 type ShotDetectionPanelProps = {
   landmarks: LandmarkMap;
@@ -23,6 +24,7 @@ type ShotDetectionPanelProps = {
 };
 
 const MAX_PROCESSING_SIDE = 960;
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 
 export function ShotDetectionPanel({
   landmarks,
@@ -33,6 +35,7 @@ export function ShotDetectionPanel({
 }: ShotDetectionPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const abortRef = useRef(false);
   const [videoUrl, setVideoUrl] = useState<string>();
   const [captureFps, setCaptureFps] = useState(120);
   const [timelineFps, setTimelineFps] = useState(120);
@@ -47,9 +50,31 @@ export function ShotDetectionPanel({
   const [status, setStatus] = useState("Upload a 120/240 fps clip, then sample the ball.");
   const [tracking, setTracking] = useState<TrackingSummary>();
   const [measurement, setMeasurement] = useState<ShotMeasurement>();
+  const displayedFramePlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
+
+  useEffect(() => () => {
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+  }, [videoUrl]);
+
+  useEffect(() => {
+    if (!processing) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [processing]);
 
   function handleVideoFile(file: File | undefined) {
     if (!file) return;
+    if (!file.type.startsWith("video/")) {
+      setStatus("Please choose a video file.");
+      return;
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      setStatus("Video is over 500 MB. Trim it around the shot in Photos, then upload the shorter original-quality clip.");
+      return;
+    }
     const nextUrl = URL.createObjectURL(file);
     setVideoUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous);
@@ -64,6 +89,13 @@ export function ShotDetectionPanel({
   function handleLoadedMetadata() {
     const video = videoRef.current;
     if (!video) return;
+    if (!Number.isFinite(video.duration) || video.duration <= 0 || !video.videoWidth) {
+      setStatus("This video could not be decoded. Use an original H.264/HEVC MOV or MP4 clip.");
+      return;
+    }
+    if (video.duration > 30) {
+      setStatus("This clip is long. For reliable iPhone processing, trim it to a few seconds around the shot.");
+    }
     setClipStartS(Math.max(0, video.currentTime));
   }
 
@@ -105,6 +137,7 @@ export function ShotDetectionPanel({
     }
 
     setProcessing(true);
+    abortRef.current = false;
     setProgress(0);
     setTracking(undefined);
     setMeasurement(undefined);
@@ -117,14 +150,12 @@ export function ShotDetectionPanel({
     const tracker = new BallTracker(7, 0.38);
     tracker.seed(seedPoint, seedRadiusPx);
     let previousFrame: ImageData | undefined;
-    const frameCount = Math.min(
-      480,
-      Math.max(8, Math.floor(clipDurationS * captureFps)),
-    );
-    const sourceStepS = 1 / Math.max(timelineFps, 1);
+    const framePlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
+    const { frameCount, sourceStepS, measurementStepS } = framePlan;
 
     try {
       for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+        if (abortRef.current) throw new Error("Processing cancelled.");
         const sourceTime = Math.min(
           Math.max(0, clipStartS + frameIndex * sourceStepS),
           Math.max(0, video.duration - 0.001),
@@ -142,7 +173,7 @@ export function ShotDetectionPanel({
           minRadiusPx: 1.8,
           maxRadiusPx: Math.max(26, canvas.width * 0.055),
         });
-        tracker.update(frameIndex, frameIndex / captureFps, candidates);
+        tracker.update(frameIndex, frameIndex * measurementStepS, candidates);
         previousFrame = frame;
 
         if (frameIndex % 6 === 0 || frameIndex === frameCount - 1) {
@@ -178,6 +209,7 @@ export function ShotDetectionPanel({
       setStatus(error instanceof Error ? error.message : "Video processing failed.");
     } finally {
       setProcessing(false);
+      abortRef.current = false;
     }
   }
 
@@ -197,7 +229,7 @@ export function ShotDetectionPanel({
       <div className="video-detection-grid">
         <div className="video-column">
           <label className="file-button compact">
-            <input type="file" accept="video/*" onChange={(event) => handleVideoFile(event.target.files?.[0])} />
+            <input type="file" accept="video/quicktime,video/mp4,video/*" onChange={(event) => handleVideoFile(event.target.files?.[0])} />
             Upload slow-motion video
           </label>
           {videoUrl ? (
@@ -273,8 +305,15 @@ export function ShotDetectionPanel({
       <button className="primary-action" disabled={!seedPoint || processing} onClick={processClip}>
         {processing ? `Processing ${Math.round(progress * 100)}%` : "Process shot and send to simulator"}
       </button>
-      <progress max="1" value={progress} />
-      <p className="status">{status}</p>
+      {processing ? (
+        <button onClick={() => { abortRef.current = true; }}>Cancel processing</button>
+      ) : null}
+      <progress aria-label="Video processing progress" max="1" value={progress} />
+      <p className="status" role="status" aria-live="polite">{status}</p>
+      <p className="hint">
+        Processing window: {displayedFramePlan.physicalSpanS.toFixed(2)}s of real capture time, reading approximately{" "}
+        {displayedFramePlan.sourceSpanS.toFixed(2)}s from this video timeline ({displayedFramePlan.frameCount} frames).
+      </p>
 
       {tracking ? (
         <dl className="detection-result-grid">

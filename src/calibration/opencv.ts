@@ -1,6 +1,4 @@
-import type { LandmarkMap, Point2D } from "./types";
-
-const OPENCV_URL = "https://docs.opencv.org/4.10.0/opencv.js";
+import type { LandmarkId, LandmarkMap, Point2D } from "./types";
 
 export type OpenCv = any;
 
@@ -16,39 +14,44 @@ export function loadOpenCv(): Promise<OpenCv> {
   if (window.cv?.Mat) return Promise.resolve(window.cv);
   if (loadingPromise) return loadingPromise;
 
-  loadingPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${OPENCV_URL}"]`);
-
-    const finishWhenReady = () => {
-      const poll = window.setInterval(() => {
-        if (window.cv?.Mat) {
-          window.clearInterval(poll);
-          resolve(window.cv);
-        }
-      }, 50);
-
-      window.setTimeout(() => {
-        window.clearInterval(poll);
-        if (!window.cv?.Mat) {
-          reject(new Error("OpenCV.js did not finish loading."));
-        }
-      }, 30_000);
-    };
-
-    if (existing) {
-      finishWhenReady();
-      return;
+  loadingPromise = (async () => {
+    try {
+      const imported = (await import("@techstark/opencv-js")) as any;
+      const candidate = imported.default ?? imported;
+      const cv = typeof candidate?.then === "function" ? await candidate : candidate;
+      if (cv?.Mat) {
+        window.cv = cv;
+        return cv;
+      }
+      return await waitForOpenCv(cv);
+    } catch (error) {
+      loadingPromise = undefined;
+      throw new Error(
+        error instanceof Error
+          ? `Local OpenCV failed to load: ${error.message}`
+          : "Local OpenCV failed to load.",
+      );
     }
-
-    const script = document.createElement("script");
-    script.src = OPENCV_URL;
-    script.async = true;
-    script.onload = finishWhenReady;
-    script.onerror = () => reject(new Error("Failed to load OpenCV.js."));
-    document.body.appendChild(script);
-  });
+  })();
 
   return loadingPromise;
+}
+
+function waitForOpenCv(candidate: OpenCv): Promise<OpenCv> {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const poll = window.setInterval(() => {
+      const cv = candidate?.Mat ? candidate : window.cv;
+      if (cv?.Mat) {
+        window.clearInterval(poll);
+        window.cv = cv;
+        resolve(cv);
+      } else if (Date.now() - startedAt > 30_000) {
+        window.clearInterval(poll);
+        reject(new Error("OpenCV runtime did not initialize within 30 seconds."));
+      }
+    }, 50);
+  });
 }
 
 export function canvasFromImage(image: HTMLImageElement): HTMLCanvasElement {
@@ -66,6 +69,7 @@ export function refineLandmarksSubPixel(
   image: HTMLImageElement,
   landmarks: LandmarkMap,
   searchRadiusPx = 28,
+  landmarkIds?: LandmarkId[],
 ): LandmarkMap {
   const canvas = canvasFromImage(image);
   const src = cv.imread(canvas);
@@ -73,10 +77,14 @@ export function refineLandmarksSubPixel(
   cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
   const refined: LandmarkMap = {};
+  const allowed = landmarkIds ? new Set(landmarkIds) : undefined;
 
   for (const [id, point] of Object.entries(landmarks)) {
     if (!point) continue;
-    refined[id as keyof LandmarkMap] = refinePoint(cv, gray, point, searchRadiusPx);
+    const landmarkId = id as LandmarkId;
+    refined[landmarkId] = allowed?.has(landmarkId)
+      ? refinePoint(cv, gray, point, searchRadiusPx)
+      : point;
   }
 
   gray.delete();

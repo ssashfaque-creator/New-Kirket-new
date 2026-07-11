@@ -349,14 +349,15 @@ export class BallTracker {
   }
 
   summary(): TrackingSummary {
-    const detected = this.points.filter((point) => !point.predicted);
-    const bounceFrameIndices = detectBounceFrames(this.points);
-    const movement = shotMovementSummary(this.points);
+    const visiblePoints = this.points.filter((point) => point.frameIndex >= 0);
+    const detected = visiblePoints.filter((point) => !point.predicted);
+    const bounceFrameIndices = detectBounceFrames(visiblePoints);
+    const movement = shotMovementSummary(visiblePoints);
 
     return {
-      points: [...this.points],
+      points: visiblePoints,
       detectedPoints: detected.length,
-      predictedPoints: this.points.length - detected.length,
+      predictedPoints: visiblePoints.length - detected.length,
       averageConfidence:
         detected.reduce((sum, point) => sum + point.confidence, 0) /
         Math.max(detected.length, 1),

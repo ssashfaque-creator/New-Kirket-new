@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BAT_LENGTH_INCHES,
   DEFAULT_CAMERA_FOV_DEGREES,
@@ -8,7 +8,7 @@ import {
 } from "./calibration/constants";
 import { defaultLandmarks, detectSetupLandmarks, type SetupDetectionResult } from "./calibration/autoDetect";
 import { buildCalibrationExport } from "./calibration/exportCalibration";
-import { calculateBatScale, formatNumber } from "./calibration/geometry";
+import { availablePoseLandmarks, calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
 import { buildPitchOverlayLines, buildTurfPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
@@ -33,6 +33,16 @@ const LINE_COLORS: Record<CandidateLine["classification"], string> = {
   other: "#94a3b8",
 };
 
+const SUBPIXEL_REFINABLE_LANDMARKS: LandmarkId[] = [
+  "middleStumpBase",
+  "middleStumpTop",
+  "offStumpBase",
+  "offStumpTop",
+  "legStumpBase",
+  "legStumpTop",
+  "batTip",
+];
+
 function App() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string>();
@@ -53,9 +63,11 @@ function App() {
   const [selectedGroundId, setSelectedGroundId] = useState(GROUND_PRESETS[3].id);
   const [selectedFieldId, setSelectedFieldId] = useState(FIELD_PRESETS[3].id);
   const [detectedShot, setDetectedShot] = useState<ShotInput>();
+  const [activeStage, setActiveStage] = useState<"calibrate" | "detect" | "simulate">("calibrate");
+  const [busyAction, setBusyAction] = useState<string>();
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
-  const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
+  const markedPosePoints = availablePoseLandmarks(landmarks).length;
   const pitchOverlayLines = useMemo(
     () => {
       const turfLines = buildTurfPitchOverlayLines(landmarks, detection?.turfPlane);
@@ -66,6 +78,10 @@ function App() {
   );
   const selectedGround = GROUND_PRESETS.find((ground) => ground.id === selectedGroundId) ?? GROUND_PRESETS[0];
   const selectedField = FIELD_PRESETS.find((field) => field.id === selectedFieldId) ?? FIELD_PRESETS[0];
+
+  useEffect(() => () => {
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
+  }, [imageUrl]);
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -166,58 +182,107 @@ function App() {
   async function runDetectSetup() {
     const image = imageRef.current;
     if (!image) return;
-    setStatus("Detecting wooden stumps and bat from this net setup...");
-    const nextDetection = detectSetupLandmarks(image);
-    setDetection(nextDetection);
-    setCandidateLines(nextDetection.candidateLines);
-    setLandmarks((current) => ({
-      ...current,
-      ...nextDetection.landmarks,
-    }));
-    setShowCandidates(true);
-    setStatus(
-      nextDetection.detectedStumpCount >= 2
-        ? `Auto-detected ${nextDetection.detectedStumpCount} stump columns${
-            nextDetection.detectedBat ? " and the bat tip" : ""
-          }. Correct every handle before calibration.`
-        : "Auto-detection could not lock onto the wicket; use the manual handles.",
-    );
+    setBusyAction("Detecting setup");
+    setStatus("Detecting wooden stumps, bat, and turf plane...");
+    try {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      const nextDetection = detectSetupLandmarks(image);
+      setDetection(nextDetection);
+      setCandidateLines(nextDetection.candidateLines);
+      setLandmarks((current) => ({ ...current, ...nextDetection.landmarks }));
+      setShowCandidates(true);
+      setStatus(
+        nextDetection.detectedStumpCount >= 2
+          ? `Auto-detected ${nextDetection.detectedStumpCount} stump columns${
+              nextDetection.detectedBat ? " and the bat tip" : ""
+            }. Correct every handle before calibration.`
+          : "Auto-detection could not lock onto the wicket; use the manual handles.",
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Setup detection failed.");
+    } finally {
+      setBusyAction(undefined);
+    }
   }
 
   async function runRefine() {
     const image = imageRef.current;
     if (!image) return;
-    setStatus("Refining marked points to nearby high-contrast corners...");
-    const cv = await loadOpenCv();
-    setLandmarks((current) => refineLandmarksSubPixel(cv, image, current));
-    setResult(undefined);
-    setStatus("Sub-pixel refinement complete. Check every handle before solving.");
+    setBusyAction("Refining points");
+    setStatus("Refining marked point landmarks...");
+    try {
+      const cv = await loadOpenCv();
+      setLandmarks((current) =>
+        refineLandmarksSubPixel(cv, image, current, 28, SUBPIXEL_REFINABLE_LANDMARKS),
+      );
+      setResult(undefined);
+      setStatus("Sub-pixel refinement complete. Check every handle before solving.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Point refinement failed.");
+    } finally {
+      setBusyAction(undefined);
+    }
   }
 
   async function runCalibrationSolve() {
     if (!imageSize) return;
+    setBusyAction("Solving calibration");
     setStatus("Solving scale and phone pose...");
-    const cv = await loadOpenCv();
-    const nextResult = solveCalibration(cv, landmarks, imageSize, assumedFov);
-    setResult(nextResult);
-    setStatus(
-      nextResult.pose
-        ? `Solved with ${nextResult.pose.usedPoints.length} points and ${formatNumber(
-            nextResult.pose.reprojectionErrorPx,
-            2,
-          )} px average error.`
-        : "Scale solved, but phone pose needs more calibrated points.",
-    );
+    try {
+      const cv = await loadOpenCv();
+      const nextResult = solveCalibration(cv, landmarks, imageSize, assumedFov);
+      setResult(nextResult);
+      setStatus(
+        nextResult.pose
+          ? `Solved with ${nextResult.pose.usedPoints.length} points and ${formatNumber(
+              nextResult.pose.reprojectionErrorPx,
+              2,
+            )} px average error.`
+          : "Scale solved, but phone pose needs more calibrated points.",
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Calibration solve failed.");
+    } finally {
+      setBusyAction(undefined);
+    }
   }
 
   async function copyExport() {
-    const payload = buildCalibrationExport(landmarks, imageSize, result);
-    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-    setStatus("Calibration JSON copied to clipboard.");
+    const payload = buildCalibrationExport(landmarks, imageSize, result, detection?.turfPlane);
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      setStatus("Calibration JSON copied to clipboard.");
+    } catch {
+      downloadJson(json, "kirket-calibration.json");
+      setStatus("Clipboard unavailable; calibration JSON downloaded instead.");
+    }
   }
 
   return (
     <main className="app-shell">
+      <nav className="stage-nav" aria-label="Application steps">
+        <button className={activeStage === "calibrate" ? "active" : ""} onClick={() => setActiveStage("calibrate")}>
+          1. Calibrate
+        </button>
+        <button className={activeStage === "detect" ? "active" : ""} onClick={() => setActiveStage("detect")}>
+          2. Detect shot
+        </button>
+        <button className={activeStage === "simulate" ? "active" : ""} onClick={() => setActiveStage("simulate")}>
+          3. Simulate
+        </button>
+      </nav>
+
+      <details className="install-guide">
+        <summary>Install on iPhone / privacy</summary>
+        <p>
+          Open the deployed HTTPS address in Safari, tap Share, then <strong>Add to Home Screen</strong>.
+          Photos and videos are processed locally in your browser and are not uploaded by this app.
+        </p>
+      </details>
+
+      {activeStage === "calibrate" ? (
+        <>
       <section className="hero">
         <div>
           <p className="eyebrow">Kirket calibration step 1</p>
@@ -253,14 +318,14 @@ function App() {
             >
               Reset handles
             </button>
-            <button disabled={!imageUrl} onClick={runDetectSetup}>
-              Auto-detect setup
+            <button disabled={!imageUrl || Boolean(busyAction)} onClick={runDetectSetup}>
+              {busyAction === "Detecting setup" ? "Detecting..." : "Auto-detect setup"}
             </button>
-            <button disabled={!imageUrl} onClick={runRefine}>
-              Refine points
+            <button disabled={!imageUrl || Boolean(busyAction)} onClick={runRefine}>
+              {busyAction === "Refining points" ? "Refining..." : "Refine points"}
             </button>
-            <button disabled={!imageUrl} className="primary" onClick={runCalibrationSolve}>
-              Run calibration
+            <button disabled={!imageUrl || Boolean(busyAction)} className="primary" onClick={runCalibrationSolve}>
+              {busyAction === "Solving calibration" ? "Solving..." : "Run calibration"}
             </button>
             <button disabled={!imageUrl} onClick={() => setZoom((value) => Math.min(6, value * 1.35))}>
               Zoom in
@@ -365,16 +430,32 @@ function App() {
                       const point = landmarks[id];
                       if (!point) return null;
                       const active = id === selectedLandmark;
+                      const imageExtent = Math.max(imageSize.width, imageSize.height);
+                      const markerRadius = imageExtent * (active ? 0.018 : 0.014);
+                      const hitRadius = imageExtent * (active ? 0.055 : 0.026);
                       return (
                         <g key={id}>
                           <circle
                             cx={point.x}
                             cy={point.y}
-                            r={active ? 14 : 10}
+                            r={hitRadius}
+                            fill="transparent"
+                            className="landmark-hit-area"
+                            onPointerDown={(event) => handleHandlePointerDown(event, id)}
+                          />
+                          <circle
+                            cx={point.x}
+                            cy={point.y}
+                            r={markerRadius}
                             className={active ? "landmark active" : "landmark"}
                             onPointerDown={(event) => handleHandlePointerDown(event, id)}
                           />
-                          <text x={point.x + 16} y={point.y - 12} className="landmark-label">
+                          <text
+                            x={point.x + markerRadius * 1.35}
+                            y={point.y - markerRadius * 1.1}
+                            className="landmark-label"
+                            fontSize={imageExtent * 0.025}
+                          >
                             {LANDMARK_LABELS[id]}
                           </text>
                         </g>
@@ -390,7 +471,7 @@ function App() {
               </div>
             )}
           </div>
-          <p className="status">{status}</p>
+          <p className="status" role="status" aria-live="polite">{status}</p>
         </div>
 
         <aside className="control-panel">
@@ -560,14 +641,23 @@ function App() {
         </aside>
       </section>
 
+        </>
+      ) : null}
+
+      {activeStage === "detect" ? (
       <ShotDetectionPanel
         landmarks={landmarks}
         calibrationImageSize={imageSize}
         turfPlane={detection?.turfPlane}
         pose={result?.pose}
-        onShotDetected={setDetectedShot}
+        onShotDetected={(shot) => {
+          setDetectedShot(shot);
+          setActiveStage("simulate");
+        }}
       />
+      ) : null}
 
+      {activeStage === "simulate" ? (
       <VirtualGround
         ground={selectedGround}
         field={selectedField}
@@ -575,8 +665,18 @@ function App() {
         onGroundChange={setSelectedGroundId}
         onFieldChange={setSelectedFieldId}
       />
+      ) : null}
     </main>
   );
 }
 
 export default App;
+
+function downloadJson(json: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

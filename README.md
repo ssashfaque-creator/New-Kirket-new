@@ -109,6 +109,9 @@ Recommended workflow:
 See [`docs/SHOT_DETECTION.md`](docs/SHOT_DETECTION.md) for the recommended
 iPhone 16 Pro capture protocol and detector limitations.
 
+See [`docs/INSTALL_IPHONE.md`](docs/INSTALL_IPHONE.md) for HTTPS deployment,
+Add-to-Home-Screen installation, privacy, and the first field-test checklist.
+
 ## Run locally
 
 ```bash
