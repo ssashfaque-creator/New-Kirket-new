@@ -65,6 +65,7 @@ function App() {
   const [detectedShot, setDetectedShot] = useState<ShotInput>();
   const [activeStage, setActiveStage] = useState<"calibrate" | "detect" | "simulate">("calibrate");
   const [busyAction, setBusyAction] = useState<string>();
+  const [dragMode, setDragMode] = useState(false);
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = availablePoseLandmarks(landmarks).length;
@@ -170,6 +171,7 @@ function App() {
   ) {
     event.stopPropagation();
     setSelectedLandmark(id);
+    if (!dragMode) return;
     setDraggingLandmark(id);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -259,6 +261,15 @@ function App() {
     }
   }
 
+  function nudgeSelectedLandmark(deltaX: number, deltaY: number) {
+    const point = landmarks[selectedLandmark];
+    if (!point || !imageSize) return;
+    updateLandmark(selectedLandmark, {
+      x: Math.min(Math.max(point.x + deltaX, 0), imageSize.width),
+      y: Math.min(Math.max(point.y + deltaY, 0), imageSize.height),
+    });
+  }
+
   return (
     <main className="app-shell">
       <nav className="stage-nav" aria-label="Application steps">
@@ -339,6 +350,13 @@ function App() {
               onClick={() => setIsPanMode((value) => !value)}
             >
               {isPanMode ? "Pan on" : "Pan off"}
+            </button>
+            <button
+              disabled={!imageUrl}
+              className={dragMode ? "active-toggle" : ""}
+              onClick={() => setDragMode((value) => !value)}
+            >
+              {dragMode ? "Drag on" : "Tap mode"}
             </button>
             <button
               disabled={!imageUrl}
@@ -431,8 +449,8 @@ function App() {
                       if (!point) return null;
                       const active = id === selectedLandmark;
                       const imageExtent = Math.max(imageSize.width, imageSize.height);
-                      const markerRadius = imageExtent * (active ? 0.018 : 0.014);
-                      const hitRadius = imageExtent * (active ? 0.055 : 0.026);
+                      const markerRadius = (imageExtent * (active ? 0.008 : 0.006)) / zoom;
+                      const hitRadius = (imageExtent * 0.016) / zoom;
                       return (
                         <g key={id}>
                           <circle
@@ -454,7 +472,7 @@ function App() {
                             x={point.x + markerRadius * 1.35}
                             y={point.y - markerRadius * 1.1}
                             className="landmark-label"
-                            fontSize={imageExtent * 0.025}
+                            fontSize={(imageExtent * 0.015) / zoom}
                           >
                             {LANDMARK_LABELS[id]}
                           </text>
@@ -480,6 +498,7 @@ function App() {
             <ol className="steps">
               <li>Tap <strong>Auto-detect setup</strong> to get stump/bat suggestions.</li>
               <li>Turn on <strong>Pan</strong> and use zoom controls for precise placement.</li>
+              <li>Use <strong>Tap mode</strong>: select a marker, tap the image to place it, then use nudge arrows for exact adjustment.</li>
               <li>Correct all stump bases/tops, especially the middle stump base.</li>
               <li>Bat end touches the middle stump base.</li>
               <li>Correct <strong>turfBackLeft</strong>/<strong>turfBackRight</strong> on the back 13 ft turf edge behind the wicket.</li>
@@ -511,6 +530,16 @@ function App() {
                   </button>
                 );
               })}
+            </div>
+            <div className="nudge-pad" aria-label="Selected marker fine adjustment">
+              <button onClick={() => nudgeSelectedLandmark(0, -5)}>Up 5</button>
+              <button onClick={() => nudgeSelectedLandmark(-5, 0)}>Left 5</button>
+              <button onClick={() => nudgeSelectedLandmark(5, 0)}>Right 5</button>
+              <button onClick={() => nudgeSelectedLandmark(0, 5)}>Down 5</button>
+              <button onClick={() => nudgeSelectedLandmark(0, -1)}>Up 1</button>
+              <button onClick={() => nudgeSelectedLandmark(-1, 0)}>Left 1</button>
+              <button onClick={() => nudgeSelectedLandmark(1, 0)}>Right 1</button>
+              <button onClick={() => nudgeSelectedLandmark(0, 1)}>Down 1</button>
             </div>
           </section>
 

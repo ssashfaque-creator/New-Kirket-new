@@ -309,7 +309,7 @@ h2 {
 .landmark {
   fill: rgba(56, 189, 248, 0.9);
   stroke: #f8fafc;
-  stroke-width: 4;
+  stroke-width: 2.5;
   cursor: grab;
   filter: drop-shadow(0 8px 12px rgba(2, 6, 23, 0.4));
 }
@@ -329,9 +329,9 @@ h2 {
   paint-order: stroke;
   pointer-events: none;
   stroke: #020617;
-  stroke-width: 6;
-  font-size: 18px;
+  stroke-width: 3;
   font-weight: 800;
+  opacity: 0.92;
 }
 
 .empty-state {
@@ -378,6 +378,19 @@ h2 {
   display: grid;
   gap: 0.45rem;
   margin-top: 0.8rem;
+}
+
+.nudge-pad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.nudge-pad button {
+  border-radius: 12px;
+  padding: 0.6rem 0.4rem;
+  font-size: 0.82rem;
 }
 
 .landmark-row {

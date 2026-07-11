@@ -48,6 +48,39 @@ export function loadOpenCv(): Promise<OpenCv> {
 
 function waitForOpenCv(candidate: OpenCv): Promise<OpenCv> {
   return new Promise((resolve, reject) => {
+    if (candidate?.Mat) {
+      window.cv = candidate;
+      resolve(candidate);
+      return;
+    }
+
+    if (typeof candidate?.then === "function") {
+      try {
+        candidate.then(
+          (resolved: OpenCv) => {
+            if (resolved?.Mat) {
+              window.cv = resolved;
+              resolve(resolved);
+            } else {
+              reject(new Error("OpenCV resolved without the expected runtime."));
+            }
+          },
+          (error: unknown) => {
+            reject(
+              new Error(
+                error instanceof Error
+                  ? `OpenCV runtime rejected: ${error.message}`
+                  : "OpenCV runtime rejected.",
+              ),
+            );
+          },
+        );
+        return;
+      } catch {
+        // Fall through to polling if the bundled object exposes a non-standard thenable.
+      }
+    }
+
     const startedAt = Date.now();
     const poll = window.setInterval(() => {
       const cv = candidate?.Mat ? candidate : window.cv;
@@ -55,9 +88,9 @@ function waitForOpenCv(candidate: OpenCv): Promise<OpenCv> {
         window.clearInterval(poll);
         window.cv = cv;
         resolve(cv);
-      } else if (Date.now() - startedAt > 30_000) {
+      } else if (Date.now() - startedAt > 60_000) {
         window.clearInterval(poll);
-        reject(new Error("OpenCV runtime did not initialize within 30 seconds."));
+        reject(new Error("OpenCV runtime did not initialize within 60 seconds."));
       }
     }, 50);
   });
