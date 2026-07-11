@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   BallTracker,
+  createBallAppearanceTemplate,
   detectBallCandidates,
   detectBounceFrames,
+  findBallByAppearanceTemplate,
   profileFromRgb,
   type BallCandidate,
   type TrackedBallPoint,
@@ -93,6 +95,26 @@ describe("yellow practice ball detection", () => {
     ];
 
     expect(detectBounceFrames(points)).toContain(2);
+  });
+
+  it("reacquires a dusty ball by appearance when color thresholding is weak", () => {
+    const contact = syntheticFrame(100, 80, [
+      { x: 40, y: 35, radius: 6, color: [180, 150, 58] },
+    ]);
+    const later = syntheticFrame(100, 80, [
+      { x: 48, y: 37, radius: 6, color: [145, 128, 72] },
+    ]);
+    const template = createBallAppearanceTemplate(contact, { x: 40, y: 35 }, 6);
+
+    const candidate = findBallByAppearanceTemplate(
+      later,
+      template,
+      { x: 47, y: 37 },
+      18,
+    );
+
+    expect(candidate).toBeDefined();
+    expect(Math.abs((candidate?.center.x ?? 0) - 48)).toBeLessThanOrEqual(3);
   });
 });
 

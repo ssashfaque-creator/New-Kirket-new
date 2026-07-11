@@ -22,6 +22,8 @@
   "homepage": "https://github.com/ssashfaque-creator/New-Kirket-new#readme",
   "dependencies": {
     "@techstark/opencv-js": "^5.0.0-release.1",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

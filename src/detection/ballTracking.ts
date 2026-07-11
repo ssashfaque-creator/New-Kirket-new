@@ -60,6 +60,12 @@ export type BallDetectionOptions = {
   maxRadiusPx?: number;
 };
 
+export type BallAppearanceTemplate = {
+  radiusPx: number;
+  gridSize: number;
+  rgb: Float32Array;
+};
+
 type ComponentAccumulator = {
   area: number;
   sumX: number;
@@ -125,6 +131,76 @@ export function sampleAverageColor(
     r: r / Math.max(weightSum, 1),
     g: g / Math.max(weightSum, 1),
     b: b / Math.max(weightSum, 1),
+  };
+}
+
+export function createBallAppearanceTemplate(
+  image: ImageData,
+  center: PixelPoint,
+  radiusPx: number,
+  gridSize = 9,
+): BallAppearanceTemplate {
+  const rgb = new Float32Array(gridSize * gridSize * 3);
+  let output = 0;
+  for (let gridY = 0; gridY < gridSize; gridY += 1) {
+    for (let gridX = 0; gridX < gridSize; gridX += 1) {
+      const normalizedX = (gridX / Math.max(gridSize - 1, 1)) * 2 - 1;
+      const normalizedY = (gridY / Math.max(gridSize - 1, 1)) * 2 - 1;
+      const x = clamp(Math.round(center.x + normalizedX * radiusPx), 0, image.width - 1);
+      const y = clamp(Math.round(center.y + normalizedY * radiusPx), 0, image.height - 1);
+      const index = (y * image.width + x) * 4;
+      const brightness = Math.max(
+        image.data[index],
+        image.data[index + 1],
+        image.data[index + 2],
+        1,
+      );
+      rgb[output] = image.data[index] / brightness;
+      rgb[output + 1] = image.data[index + 1] / brightness;
+      rgb[output + 2] = image.data[index + 2] / brightness;
+      output += 3;
+    }
+  }
+  return { radiusPx, gridSize, rgb };
+}
+
+export function findBallByAppearanceTemplate(
+  image: ImageData,
+  template: BallAppearanceTemplate,
+  predictedCenter: PixelPoint,
+  searchRadiusPx: number,
+): BallCandidate | undefined {
+  const step = Math.max(1, Math.floor(template.radiusPx / 3));
+  let best: { center: PixelPoint; score: number } | undefined;
+  const xStart = Math.max(template.radiusPx, Math.floor(predictedCenter.x - searchRadiusPx));
+  const xEnd = Math.min(image.width - template.radiusPx - 1, Math.ceil(predictedCenter.x + searchRadiusPx));
+  const yStart = Math.max(template.radiusPx, Math.floor(predictedCenter.y - searchRadiusPx));
+  const yEnd = Math.min(image.height - template.radiusPx - 1, Math.ceil(predictedCenter.y + searchRadiusPx));
+
+  for (let y = yStart; y <= yEnd; y += step) {
+    for (let x = xStart; x <= xEnd; x += step) {
+      if (Math.hypot(x - predictedCenter.x, y - predictedCenter.y) > searchRadiusPx) continue;
+      const score = appearanceSimilarity(image, template, { x, y });
+      const temporal = 1 - Math.hypot(x - predictedCenter.x, y - predictedCenter.y) / searchRadiusPx;
+      const combined = score * 0.78 + temporal * 0.22;
+      if (!best || combined > best.score) best = { center: { x, y }, score: combined };
+    }
+  }
+
+  if (!best || best.score < 0.58) return undefined;
+  return {
+    center: best.center,
+    radiusPx: template.radiusPx,
+    areaPx: Math.PI * template.radiusPx * template.radiusPx,
+    circularity: 0.78,
+    colorScore: best.score,
+    motionScore: 0.45,
+    temporalScore: clamp(
+      1 - Math.hypot(best.center.x - predictedCenter.x, best.center.y - predictedCenter.y) / searchRadiusPx,
+      0,
+      1,
+    ),
+    confidence: clamp(best.score * 0.82, 0, 0.82),
   };
 }
 
@@ -524,6 +600,39 @@ function connectedComponents(
   }
 
   return components;
+}
+
+function appearanceSimilarity(
+  image: ImageData,
+  template: BallAppearanceTemplate,
+  center: PixelPoint,
+): number {
+  let error = 0;
+  let input = 0;
+  for (let gridY = 0; gridY < template.gridSize; gridY += 1) {
+    for (let gridX = 0; gridX < template.gridSize; gridX += 1) {
+      const normalizedX = (gridX / Math.max(template.gridSize - 1, 1)) * 2 - 1;
+      const normalizedY = (gridY / Math.max(template.gridSize - 1, 1)) * 2 - 1;
+      const x = clamp(Math.round(center.x + normalizedX * template.radiusPx), 0, image.width - 1);
+      const y = clamp(Math.round(center.y + normalizedY * template.radiusPx), 0, image.height - 1);
+      const index = (y * image.width + x) * 4;
+      const brightness = Math.max(
+        image.data[index],
+        image.data[index + 1],
+        image.data[index + 2],
+        1,
+      );
+      const r = image.data[index] / brightness;
+      const g = image.data[index + 1] / brightness;
+      const b = image.data[index + 2] / brightness;
+      error += Math.abs(r - template.rgb[input]);
+      error += Math.abs(g - template.rgb[input + 1]);
+      error += Math.abs(b - template.rgb[input + 2]);
+      input += 3;
+    }
+  }
+  const meanError = error / Math.max(template.gridSize * template.gridSize * 3, 1);
+  return clamp(1 - meanError / 0.42, 0, 1);
 }
 
 function morphologyOpenClose(

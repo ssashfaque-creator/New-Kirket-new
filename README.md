@@ -75,6 +75,11 @@ system.
   - manual frame-by-frame ball keyframes when automatic tracking is unreliable
   - actionable failure diagnostics for missing frames, occlusion, impact, and
     calibration problems
+  - optional lazy-loaded TensorFlow COCO-SSD assistance for locating a generic
+    sports ball on the selected contact frame
+  - automatic bidirectional frame pulling before/after contact
+  - appearance-template reacquisition when dust, blur, or lighting defeats the
+    yellow color mask
 - Adds reliability and continuity features:
   - automatic on-device calibration session persistence
   - JSON calibration import/export and recovery
@@ -124,6 +129,9 @@ Recommended workflow:
 
 See [`docs/SHOT_DETECTION.md`](docs/SHOT_DETECTION.md) for the recommended
 iPhone 16 Pro capture protocol and detector limitations.
+
+See [`docs/CUSTOM_BALL_MODEL.md`](docs/CUSTOM_BALL_MODEL.md) for the labeled
+dataset and custom YOLO/ONNX path needed to move beyond generic sports-ball AI.
 
 See [`docs/INSTALL_IPHONE.md`](docs/INSTALL_IPHONE.md) for HTTPS deployment,
 Add-to-Home-Screen installation, privacy, and the first field-test checklist.

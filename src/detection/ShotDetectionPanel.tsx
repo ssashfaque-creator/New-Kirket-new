@@ -5,8 +5,10 @@ import type { ShotInput } from "../ground/shotSimulation";
 import {
   BallTracker,
   DEFAULT_YELLOW_BALL_PROFILE,
+  createBallAppearanceTemplate,
   detectBallCandidates,
   profileFromRgb,
+  findBallByAppearanceTemplate,
   sampleAverageColor,
   detectBounceFrames,
   type BallColorProfile,
@@ -16,6 +18,7 @@ import {
 } from "./ballTracking";
 import { estimateShotMeasurement, type ShotMeasurement } from "./shotEstimation";
 import { buildVideoFramePlan } from "./videoTiming";
+import { detectSportsBallWithAi } from "./aiObjectDetection";
 
 type ShotDetectionPanelProps = {
   landmarks: LandmarkMap;
@@ -48,6 +51,7 @@ export function ShotDetectionPanel({
   const [captureFps, setCaptureFps] = useState(120);
   const [timelineFps, setTimelineFps] = useState(120);
   const [clipStartS, setClipStartS] = useState(0);
+  const [beforeContactS, setBeforeContactS] = useState(0.2);
   const [clipDurationS, setClipDurationS] = useState(1.25);
   const [ballDiameterMm, setBallDiameterMm] = useState(72);
   const [profile, setProfile] = useState<BallColorProfile>(DEFAULT_YELLOW_BALL_PROFILE);
@@ -60,7 +64,9 @@ export function ShotDetectionPanel({
   const [measurement, setMeasurement] = useState<ShotMeasurement>();
   const [capturedSourceTimeS, setCapturedSourceTimeS] = useState(0);
   const [manualKeyframes, setManualKeyframes] = useState<ManualKeyframe[]>([]);
-  const displayedFramePlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
+  const [aiLoading, setAiLoading] = useState(false);
+  const displayedBeforePlan = buildVideoFramePlan(captureFps, timelineFps, beforeContactS);
+  const displayedAfterPlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -94,7 +100,7 @@ export function ShotDetectionPanel({
     setTracking(undefined);
     setMeasurement(undefined);
     setManualKeyframes([]);
-    setStatus("Move the video to just before bat contact, then tap Grab frame.");
+    setStatus("Move the video to the frame closest to bat-ball contact, then tap Grab current frame.");
   }
 
   function handleLoadedMetadata() {
@@ -144,6 +150,44 @@ export function ShotDetectionPanel({
     setStatus("Ball sampled and manual keyframe saved. Seek/grab/tap more frames or run automatic processing.");
   }
 
+  async function locateBallWithAi() {
+    const canvas = canvasRef.current;
+    if (!canvas || !canvas.width || aiLoading) {
+      setStatus("Grab the contact frame before running AI assist.");
+      return;
+    }
+    setAiLoading(true);
+    setStatus("Loading AI model and searching the contact frame for a sports ball...");
+    try {
+      const detection = await detectSportsBallWithAi(canvas);
+      if (!detection) {
+        setStatus("AI did not recognize the practice ball. Tap it manually; tracking still uses its sampled appearance.");
+        return;
+      }
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+      const color = sampleAverageColor(frame, detection.center, detection.radiusPx);
+      setProfile(profileFromRgb(color, Math.max(profile.hueToleranceDegrees, 28)));
+      setSeedPoint(detection.center);
+      setSeedRadiusPx(Math.round(detection.radiusPx));
+      setManualKeyframes((current) => [
+        ...current.filter((item) => Math.abs(item.sourceTimeS - capturedSourceTimeS) > 0.0005),
+        {
+          sourceTimeS: capturedSourceTimeS,
+          center: detection.center,
+          radiusPx: detection.radiusPx,
+        },
+      ].sort((a, b) => a.sourceTimeS - b.sourceTimeS));
+      drawAiDetection(canvas, detection.box);
+      setStatus(`AI located a sports ball at ${Math.round(detection.confidence * 100)}% confidence. Verify the box before processing.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "AI ball detection failed. Tap the ball manually.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   async function processClip() {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -163,42 +207,104 @@ export function ShotDetectionPanel({
       return;
     }
 
-    const tracker = new BallTracker(7, 0.38);
-    tracker.seed(seedPoint, seedRadiusPx);
-    let previousFrame: ImageData | undefined;
-    const framePlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
-    const { frameCount, sourceStepS, measurementStepS } = framePlan;
-
     try {
-      for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-        if (abortRef.current) throw new Error("Processing cancelled.");
-        const sourceTime = Math.min(
-          Math.max(0, clipStartS + frameIndex * sourceStepS),
-          Math.max(0, video.duration - 0.001),
-        );
-        await seekVideo(video, sourceTime);
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frame = context.getImageData(0, 0, canvas.width, canvas.height);
-        const prediction = tracker.prediction;
-        const candidates = detectBallCandidates(frame, {
-          profile,
-          previousFrame,
-          predictedCenter: prediction.center,
-          predictedRadiusPx: prediction.radiusPx,
-          searchRadiusPx: prediction.searchRadiusPx,
-          minRadiusPx: 1.8,
-          maxRadiusPx: Math.max(26, canvas.width * 0.055),
-        });
-        tracker.update(frameIndex, frameIndex * measurementStepS, candidates);
-        previousFrame = frame;
+      await seekVideo(video, clipStartS);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const contactFrame = context.getImageData(0, 0, canvas.width, canvas.height);
+      const appearanceTemplate = createBallAppearanceTemplate(
+        contactFrame,
+        seedPoint,
+        seedRadiusPx,
+      );
+      const beforePlan = buildVideoFramePlan(captureFps, timelineFps, beforeContactS);
+      const afterPlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
+      const totalFrames = beforePlan.frameCount + afterPlan.frameCount;
+      let processedFrames = 0;
 
-        if (frameIndex % 6 === 0 || frameIndex === frameCount - 1) {
-          setProgress((frameIndex + 1) / frameCount);
-          await yieldToBrowser();
+      const trackDirection = async (
+        direction: -1 | 1,
+        plan: ReturnType<typeof buildVideoFramePlan>,
+      ) => {
+        const tracker = new BallTracker(9, 0.34);
+        tracker.seed(seedPoint, seedRadiusPx);
+        let previousFrame = contactFrame;
+        for (let step = 1; step <= plan.frameCount; step += 1) {
+          if (abortRef.current) throw new Error("Processing cancelled.");
+          const sourceTime = Math.min(
+            Math.max(0, clipStartS + direction * step * plan.sourceStepS),
+            Math.max(0, video.duration - 0.001),
+          );
+          await seekVideo(video, sourceTime);
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const frame = context.getImageData(0, 0, canvas.width, canvas.height);
+          const prediction = tracker.prediction;
+          let candidates = detectBallCandidates(frame, {
+            profile,
+            previousFrame,
+            predictedCenter: prediction.center,
+            predictedRadiusPx: prediction.radiusPx,
+            searchRadiusPx: prediction.searchRadiusPx,
+            minRadiusPx: 1.8,
+            maxRadiusPx: Math.max(26, canvas.width * 0.055),
+          });
+          if ((!candidates[0] || candidates[0].confidence < 0.48) && prediction.center) {
+            const templateCandidate = findBallByAppearanceTemplate(
+              frame,
+              appearanceTemplate,
+              prediction.center,
+              Math.min(prediction.searchRadiusPx ?? 80, canvas.width * 0.18),
+            );
+            if (templateCandidate) {
+              candidates = [templateCandidate, ...candidates];
+            }
+          }
+          tracker.update(step, step * plan.measurementStepS, candidates);
+          previousFrame = frame;
+          processedFrames += 1;
+          if (processedFrames % 6 === 0 || processedFrames === totalFrames) {
+            setProgress(processedFrames / totalFrames);
+            await yieldToBrowser();
+          }
         }
-      }
+        return tracker.summary();
+      };
 
-      const summary = tracker.summary();
+      const backward = await trackDirection(-1, beforePlan);
+      const forward = await trackDirection(1, afterPlan);
+      const backwardPoints = backward.points
+        .map((point) => ({
+          ...point,
+          frameIndex: -point.frameIndex,
+          timeS: -point.timeS,
+          velocityPxPerS: {
+            x: -point.velocityPxPerS.x,
+            y: -point.velocityPxPerS.y,
+          },
+        }))
+        .reverse();
+      const contactPoint: TrackedBallPoint = {
+        frameIndex: 0,
+        timeS: 0,
+        center: seedPoint,
+        radiusPx: seedRadiusPx,
+        confidence: 1,
+        predicted: false,
+        velocityPxPerS: forward.points[0]?.velocityPxPerS ?? { x: 0, y: 0 },
+      };
+      const combinedPoints = [...backwardPoints, contactPoint, ...forward.points];
+      const summary: TrackingSummary = {
+        points: combinedPoints,
+        detectedPoints: combinedPoints.filter((point) => !point.predicted).length,
+        predictedPoints: combinedPoints.filter((point) => point.predicted).length,
+        averageConfidence:
+          combinedPoints.reduce((sum, point) => sum + point.confidence, 0) /
+          Math.max(combinedPoints.length, 1),
+        impactFrameIndex: 0,
+        bounceFrameIndices: detectBounceFrames(forward.points),
+        pixelDirectionDegrees: forward.pixelDirectionDegrees,
+        pixelSpeedPerSecond: forward.pixelSpeedPerSecond,
+        longestPredictedGap: Math.max(backward.longestPredictedGap, forward.longestPredictedGap),
+      };
       setTracking(summary);
       drawTrackingOverlay(canvas, summary);
       const nextMeasurement = estimateShotMeasurement(summary, {
@@ -300,7 +406,7 @@ export function ShotDetectionPanel({
           <h2>Track the yellow practice ball from slow-motion video</h2>
           <p className="panel-subtitle">
             Best accuracy: iPhone 16 Pro main 1× camera, fixed position, 4K/120 fps or 1080p/240 fps,
-            strong light, and a clip beginning just before contact.
+            strong light, then select the frame closest to bat-ball contact.
           </p>
         </div>
       </div>
@@ -324,6 +430,9 @@ export function ShotDetectionPanel({
             <div className="video-placeholder">Upload a short slow-motion clip.</div>
           )}
           <button disabled={!videoUrl} onClick={captureCurrentFrame}>Grab current frame</button>
+          <button disabled={!videoUrl || aiLoading} onClick={locateBallWithAi}>
+            {aiLoading ? "Loading AI..." : "AI locate ball"}
+          </button>
         </div>
 
         <div className="detection-canvas-wrap">
@@ -350,11 +459,15 @@ export function ShotDetectionPanel({
           </select>
         </label>
         <label>
-          Clip start
+          Contact frame time
           <input min="0" step="0.01" type="number" value={clipStartS} onChange={(event) => setClipStartS(Number(event.target.value))} />
         </label>
         <label>
-          Clip duration
+          Seconds before contact
+          <input min="0.05" max="0.75" step="0.05" type="number" value={beforeContactS} onChange={(event) => setBeforeContactS(Number(event.target.value))} />
+        </label>
+        <label>
+          Seconds after contact
           <input min="0.25" max="3" step="0.05" type="number" value={clipDurationS} onChange={(event) => setClipDurationS(Number(event.target.value))} />
         </label>
         <label>
@@ -414,8 +527,9 @@ export function ShotDetectionPanel({
       <progress aria-label="Video processing progress" max="1" value={progress} />
       <p className="status" role="status" aria-live="polite">{status}</p>
       <p className="hint">
-        Processing window: {displayedFramePlan.physicalSpanS.toFixed(2)}s of real capture time, reading approximately{" "}
-        {displayedFramePlan.sourceSpanS.toFixed(2)}s from this video timeline ({displayedFramePlan.frameCount} frames).
+        Contact-first processing automatically reads {displayedBeforePlan.frameCount} frames before and{" "}
+        {displayedAfterPlan.frameCount} frames after contact. Timeline span: approximately{" "}
+        {(displayedBeforePlan.sourceSpanS + displayedAfterPlan.sourceSpanS).toFixed(2)}s.
       </p>
 
       {tracking ? (
@@ -456,6 +570,22 @@ function drawSampleMarker(canvas: HTMLCanvasElement, point: PixelPoint, radius: 
   context.strokeStyle = "#f97316";
   context.lineWidth = 3;
   context.stroke();
+}
+
+function drawAiDetection(
+  canvas: HTMLCanvasElement,
+  box: [number, number, number, number],
+) {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.strokeStyle = "#38bdf8";
+  context.lineWidth = 4;
+  context.strokeRect(box[0], box[1], box[2], box[3]);
+  context.fillStyle = "rgba(2, 6, 23, 0.82)";
+  context.fillRect(box[0], Math.max(0, box[1] - 26), 150, 24);
+  context.fillStyle = "#e0f2fe";
+  context.font = "bold 16px system-ui";
+  context.fillText("AI sports ball", box[0] + 6, Math.max(17, box[1] - 8));
 }
 
 function drawTrackingOverlay(canvas: HTMLCanvasElement, summary: TrackingSummary) {

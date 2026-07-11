@@ -32,9 +32,9 @@ so browser live capture is a lower-accuracy fallback.
 
 1. Complete image calibration first.
 2. Upload the slow-motion video.
-3. Seek to roughly 0.1–0.3 seconds before bat contact.
-4. Tap **Grab current frame**.
-5. Tap the visible ball. This learns the current dusty/worn yellow color.
+3. Scrub through the clip to identify the bat-contact moment.
+4. Seek to the frame closest to bat-ball contact and tap **Grab current frame**.
+5. Tap the visible ball, or try **AI locate ball**. Always verify the AI box.
 6. Set capture FPS:
    - 120 for 4K/120.
    - 240 for 1080p/240.
@@ -63,6 +63,7 @@ clips until enough real footage exists to retrain/tune automatic detection.
 
 The detector combines:
 
+- optional COCO-SSD “sports ball” localization on the contact frame;
 - user-sampled adaptive HSV color;
 - broad hue tolerance for dust and wear;
 - frame-to-frame RGB motion;
@@ -70,6 +71,8 @@ The detector combines:
 - predicted position and radius gating;
 - velocity-smoothed multi-frame tracking;
 - short occlusion recovery;
+- appearance-template reacquisition when the color mask fails;
+- bidirectional tracking before and after the selected contact frame;
 - impact detection from velocity change;
 - bounce detection from vertical velocity reversal.
 
@@ -92,3 +95,8 @@ requires:
 
 The app reports confidence and warnings rather than silently presenting a weak
 track as precise.
+
+The generic COCO model is only an initialization assistant. It is not trained
+specifically on this yellow dimpled ball, cricket bats, or this net. Professional
+automatic detection still requires a custom model trained from labeled frames
+captured in the real setup.
