@@ -50,13 +50,42 @@ export function buildTurfPitchOverlayLines(
   const batTip = landmarks.batTip;
   if (!origin || !batTip || !turfPlane) return [];
 
-  const originT = turfParameterForPoint(origin, turfPlane);
-  const batT = turfParameterForPoint(batTip, turfPlane);
-  const tPerInch = (batT - originT) / 33.5;
-  if (!Number.isFinite(tPerInch) || Math.abs(tPerInch) < 0.0005) return [];
+  const originUnit = imageToTurfUnit(origin, turfPlane);
+  const batUnit = imageToTurfUnit(batTip, turfPlane);
+  const originPlane = {
+    x: unitToXInches(originUnit.x),
+    y: originUnit.y,
+  };
+  const batPlane = {
+    x: unitToXInches(batUnit.x),
+    y: batUnit.y,
+  };
+  const deltaX = clamp(batPlane.x - originPlane.x, -33.5 * 0.65, 33.5 * 0.65);
+  const deltaV = batPlane.y - originPlane.y;
+  if (!Number.isFinite(deltaV) || Math.abs(deltaV) < 0.0005) return [];
 
-  const pointFor = (xInches: number, yInches: number) =>
-    turfPointAt(turfPlane, originT + yInches * tPerInch, xInches);
+  const deltaYInches = Math.sqrt(Math.max(33.5 * 33.5 - deltaX * deltaX, 33.5 * 33.5 * 0.35));
+  const vScale = (Math.sign(deltaV) || 1) * deltaYInches / deltaV;
+  if (!Number.isFinite(vScale) || Math.abs(vScale) < 1e-6) return [];
+
+  const originReal = {
+    x: originPlane.x,
+    y: originPlane.y * vScale,
+  };
+  const batForward = unitVector({
+    x: deltaX,
+    y: deltaV * vScale,
+  });
+  const basis = turfOverlayBasis(landmarks, turfPlane, vScale, batForward);
+  const forward = basis.forward;
+  const right = basis.right;
+  const pointFor = (xInches: number, yInches: number) => {
+    const planePoint = {
+      x: originReal.x + right.x * xInches + forward.x * yInches,
+      y: originReal.y + right.y * xInches + forward.y * yInches,
+    };
+    return turfPointAt(turfPlane, planePoint.y / vScale, planePoint.x);
+  };
 
   return [
     turfWorldLine("pitch-left-edge", "pitch edge", "pitch", -PITCH_HALF_WIDTH_INCHES, 0, -PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
@@ -69,6 +98,47 @@ export function buildTurfPitchOverlayLines(
     turfWorldLine("bowling-crease-far", "far bowling crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
     turfWorldLine("popping-crease-far", "far popping crease", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, pointFor),
   ].filter((line) => line.points.every(isFinitePoint));
+}
+
+function turfOverlayBasis(
+  landmarks: LandmarkMap,
+  turfPlane: TurfPlane,
+  vScale: number,
+  batForward: Point2D,
+): { forward: Point2D; right: Point2D } {
+  const creaseLeft = landmarks.creaseLeft;
+  const creaseRight = landmarks.creaseRight;
+  if (creaseLeft && creaseRight) {
+    const leftUnit = imageToTurfUnit(creaseLeft, turfPlane);
+    const rightUnit = imageToTurfUnit(creaseRight, turfPlane);
+    const leftReal = { x: unitToXInches(leftUnit.x), y: leftUnit.y * vScale };
+    const rightReal = { x: unitToXInches(rightUnit.x), y: rightUnit.y * vScale };
+    const creaseRightVector = unitVector({
+      x: rightReal.x - leftReal.x,
+      y: rightReal.y - leftReal.y,
+    });
+    let forward = {
+      x: -creaseRightVector.y,
+      y: creaseRightVector.x,
+    };
+
+    if (forward.x * batForward.x + forward.y * batForward.y < 0) {
+      forward = { x: -forward.x, y: -forward.y };
+    }
+
+    return {
+      forward,
+      right: creaseRightVector,
+    };
+  }
+
+  return {
+    forward: batForward,
+    right: {
+      x: batForward.y,
+      y: -batForward.x,
+    },
+  };
 }
 
 export function projectWorldPoint(pose: PoseResult, point: Point3D): Point2D | undefined {
@@ -198,19 +268,15 @@ function turfWorldLine(
 }
 
 function turfPointAt(turfPlane: TurfPlane, t: number, xInches: number): Point2D {
-  const left = interpolate(turfPlane.leftEdge.near, turfPlane.leftEdge.far, t);
-  const right = interpolate(turfPlane.rightEdge.near, turfPlane.rightEdge.far, t);
-  const xFraction = (xInches + NET_TURF_WIDTH_INCHES / 2) / NET_TURF_WIDTH_INCHES;
-  return interpolate(left, right, xFraction);
+  const homography = turfHomography(turfPlane);
+  return applyHomography(homography, {
+    x: xInchesToUnit(xInches),
+    y: t,
+  });
 }
 
 function turfParameterForPoint(point: Point2D, turfPlane: TurfPlane): number {
-  const nearCenter = midpoint(turfPlane.leftEdge.near, turfPlane.rightEdge.near);
-  const farCenter = midpoint(turfPlane.leftEdge.far, turfPlane.rightEdge.far);
-  const axis = { x: farCenter.x - nearCenter.x, y: farCenter.y - nearCenter.y };
-  const lengthSquared = axis.x * axis.x + axis.y * axis.y;
-  if (lengthSquared < 1e-6) return 0;
-  return ((point.x - nearCenter.x) * axis.x + (point.y - nearCenter.y) * axis.y) / lengthSquared;
+  return imageToTurfUnit(point, turfPlane).y;
 }
 
 function interpolate(a: Point2D, b: Point2D, t: number): Point2D {
@@ -229,6 +295,124 @@ function midpoint(a: Point2D, b: Point2D): Point2D {
 
 function isFinitePoint(point: Point2D): boolean {
   return Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function unitVector(vector: Point2D): Point2D {
+  const length = Math.hypot(vector.x, vector.y);
+  if (length < 1e-9) return { x: 0, y: 1 };
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function imageToTurfUnit(point: Point2D, turfPlane: TurfPlane): Point2D {
+  return applyHomography(invertHomography(turfHomography(turfPlane)), point);
+}
+
+function xInchesToUnit(xInches: number): number {
+  return (xInches + NET_TURF_WIDTH_INCHES / 2) / NET_TURF_WIDTH_INCHES;
+}
+
+function unitToXInches(unitX: number): number {
+  return (unitX - 0.5) * NET_TURF_WIDTH_INCHES;
+}
+
+function turfHomography(turfPlane: TurfPlane): number[] {
+  return computeHomography(
+    [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ],
+    [
+      turfPlane.leftEdge.near,
+      turfPlane.rightEdge.near,
+      turfPlane.rightEdge.far,
+      turfPlane.leftEdge.far,
+    ],
+  );
+}
+
+function applyHomography(h: number[], point: Point2D): Point2D {
+  const denominator = h[6] * point.x + h[7] * point.y + h[8];
+  return {
+    x: (h[0] * point.x + h[1] * point.y + h[2]) / denominator,
+    y: (h[3] * point.x + h[4] * point.y + h[5]) / denominator,
+  };
+}
+
+function computeHomography(source: Point2D[], destination: Point2D[]): number[] {
+  const matrix: number[][] = [];
+  const rhs: number[] = [];
+
+  for (let i = 0; i < 4; i += 1) {
+    const src = source[i];
+    const dst = destination[i];
+    matrix.push([src.x, src.y, 1, 0, 0, 0, -dst.x * src.x, -dst.x * src.y]);
+    rhs.push(dst.x);
+    matrix.push([0, 0, 0, src.x, src.y, 1, -dst.y * src.x, -dst.y * src.y]);
+    rhs.push(dst.y);
+  }
+
+  const solved = solveLinearSystem(matrix, rhs);
+  return [...solved, 1];
+}
+
+function solveLinearSystem(matrix: number[][], rhs: number[]): number[] {
+  const size = rhs.length;
+  const augmented = matrix.map((row, index) => [...row, rhs[index]]);
+
+  for (let column = 0; column < size; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < size; row += 1) {
+      if (Math.abs(augmented[row][column]) > Math.abs(augmented[pivot][column])) {
+        pivot = row;
+      }
+    }
+
+    [augmented[column], augmented[pivot]] = [augmented[pivot], augmented[column]];
+    const pivotValue = augmented[column][column] || 1e-12;
+    for (let col = column; col <= size; col += 1) {
+      augmented[column][col] /= pivotValue;
+    }
+
+    for (let row = 0; row < size; row += 1) {
+      if (row === column) continue;
+      const factor = augmented[row][column];
+      for (let col = column; col <= size; col += 1) {
+        augmented[row][col] -= factor * augmented[column][col];
+      }
+    }
+  }
+
+  return augmented.map((row) => row[size]);
+}
+
+function invertHomography(h: number[]): number[] {
+  const [a, b, c, d, e, f, g, i, j] = h;
+  const determinant =
+    a * (e * j - f * i) -
+    b * (d * j - f * g) +
+    c * (d * i - e * g);
+  const invDet = 1 / (determinant || 1e-12);
+
+  return [
+    (e * j - f * i) * invDet,
+    (c * i - b * j) * invDet,
+    (b * f - c * e) * invDet,
+    (f * g - d * j) * invDet,
+    (a * j - c * g) * invDet,
+    (c * d - a * f) * invDet,
+    (d * i - e * g) * invDet,
+    (b * g - a * i) * invDet,
+    (a * e - b * d) * invDet,
+  ];
 }
 
 function rodrigues(rvec: [number, number, number]) {

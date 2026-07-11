@@ -322,6 +322,7 @@ function App() {
               <li>Manually drag every handle onto the exact visible point.</li>
               <li>Bat end touches the middle stump base.</li>
               <li>Bat lies flat and points along the pitch center line.</li>
+              <li>Drag creaseLeft/creaseRight onto the crease direction if overlay angle looks off.</li>
               <li>Mark bases and tops of visible stumps as precisely as possible.</li>
               <li>Use refine, then solve. Keep average reprojection error under 2 px.</li>
             </ol>

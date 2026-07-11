@@ -35,6 +35,9 @@ system.
   plane is detected, the overlay uses the 13 ft turf/net width plus the bat
   calibration so pitch edges and crease lines follow the turf perspective. It
   falls back to camera pose projection when no turf plane is available.
+- The overlay angle can be corrected manually: dragging `creaseLeft` and
+  `creaseRight` now defines the crease direction, while the app still uses the
+  turf homography and known dimensions for scale/perspective.
 - Reports average and maximum reprojection error so inaccurate calibrations are
   visible immediately.
 - Exports calibration JSON for future game-simulation steps.
