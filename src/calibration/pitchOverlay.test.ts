@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPitchOverlayLines, projectWorldPoint } from "./pitchOverlay";
+import { buildPitchOverlayLines, buildTurfPitchOverlayLines, projectWorldPoint } from "./pitchOverlay";
 import type { PoseResult } from "./types";
 
 const pose: PoseResult = {
@@ -35,5 +35,37 @@ describe("pitch overlay projection", () => {
     expect(lines.some((line) => line.id === "popping-crease-near")).toBe(true);
     expect(lines.some((line) => line.id === "pitch-center")).toBe(true);
     expect(lines.every((line) => line.points.length >= 2)).toBe(true);
+  });
+
+  it("builds pitch lines from the detected 13 ft turf plane", () => {
+    const lines = buildTurfPitchOverlayLines(
+      {
+        middleStumpBase: { x: 100, y: 500 },
+        batTip: { x: 100, y: 400 },
+      },
+      {
+        confidence: 0.9,
+        polygon: [
+          { x: 20, y: 550 },
+          { x: 180, y: 550 },
+          { x: 180, y: 50 },
+          { x: 20, y: 50 },
+        ],
+        leftEdge: {
+          near: { x: 20, y: 550 },
+          far: { x: 20, y: 50 },
+        },
+        rightEdge: {
+          near: { x: 180, y: 550 },
+          far: { x: 180, y: 50 },
+        },
+      },
+    );
+
+    const bowlingCrease = lines.find((line) => line.id === "bowling-crease-near");
+    const center = lines.find((line) => line.id === "pitch-center");
+
+    expect(bowlingCrease?.points[0].y).toBeCloseTo(bowlingCrease?.points.at(-1)?.y ?? 0, 6);
+    expect(center?.points[0].x).toBeCloseTo(100, 6);
   });
 });

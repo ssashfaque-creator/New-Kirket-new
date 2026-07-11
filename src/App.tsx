@@ -10,7 +10,7 @@ import { defaultLandmarks, detectSetupLandmarks, type SetupDetectionResult } fro
 import { buildCalibrationExport } from "./calibration/exportCalibration";
 import { calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
-import { buildPitchOverlayLines } from "./calibration/pitchOverlay";
+import { buildPitchOverlayLines, buildTurfPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
 import type {
   CalibrationResult,
@@ -46,8 +46,12 @@ function App() {
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
   const pitchOverlayLines = useMemo(
-    () => (result?.pose ? buildPitchOverlayLines(result.pose) : []),
-    [result?.pose],
+    () => {
+      const turfLines = buildTurfPitchOverlayLines(landmarks, detection?.turfPlane);
+      if (turfLines.length) return turfLines;
+      return result?.pose ? buildPitchOverlayLines(result.pose) : [];
+    },
+    [detection?.turfPlane, landmarks, result?.pose],
   );
 
   function handleFile(file: File | undefined) {
@@ -367,6 +371,10 @@ function App() {
                         : "suggested"
                       : "manual correction needed"}
                   </dd>
+                </div>
+                <div>
+                  <dt>Turf plane</dt>
+                  <dd>{detection.turfPlane ? `${Math.round(detection.turfPlane.confidence * 100)}%` : "not found"}</dd>
                 </div>
               </dl>
               {detection.warnings.length ? (

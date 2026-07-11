@@ -1,12 +1,14 @@
 import {
   BOWLING_CREASE_HALF_WIDTH_INCHES,
   CRICKET_PITCH_LENGTH_INCHES,
+  NET_TURF_WIDTH_INCHES,
   PITCH_HALF_WIDTH_INCHES,
   POPPING_CREASE_DISTANCE_INCHES,
   POPPING_CREASE_HALF_WIDTH_INCHES,
   RETURN_CREASE_FORWARD_INCHES,
 } from "./constants";
-import type { Point2D, Point3D, PoseResult } from "./types";
+import type { TurfPlane } from "./autoDetect";
+import type { LandmarkMap, Point2D, Point3D, PoseResult } from "./types";
 
 export type PitchOverlayLine = {
   id: string;
@@ -38,6 +40,35 @@ export function buildPitchOverlayLines(pose: PoseResult): PitchOverlayLine[] {
       };
     })
     .filter((line) => line.points.length >= 2);
+}
+
+export function buildTurfPitchOverlayLines(
+  landmarks: LandmarkMap,
+  turfPlane: TurfPlane | undefined,
+): PitchOverlayLine[] {
+  const origin = landmarks.middleStumpBase;
+  const batTip = landmarks.batTip;
+  if (!origin || !batTip || !turfPlane) return [];
+
+  const originT = turfParameterForPoint(origin, turfPlane);
+  const batT = turfParameterForPoint(batTip, turfPlane);
+  const tPerInch = (batT - originT) / 33.5;
+  if (!Number.isFinite(tPerInch) || Math.abs(tPerInch) < 0.0005) return [];
+
+  const pointFor = (xInches: number, yInches: number) =>
+    turfPointAt(turfPlane, originT + yInches * tPerInch, xInches);
+
+  return [
+    turfWorldLine("pitch-left-edge", "pitch edge", "pitch", -PITCH_HALF_WIDTH_INCHES, 0, -PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("pitch-right-edge", "pitch edge", "pitch", PITCH_HALF_WIDTH_INCHES, 0, PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("pitch-center", "pitch centre", "center", 0, 0, 0, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("bowling-crease-near", "bowling crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, 0, pointFor),
+    turfWorldLine("popping-crease-near", "popping crease", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, pointFor),
+    turfWorldLine("return-crease-left", "return crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, -BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
+    turfWorldLine("return-crease-right", "return crease", "crease", BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
+    turfWorldLine("bowling-crease-far", "far bowling crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("popping-crease-far", "far popping crease", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, pointFor),
+  ].filter((line) => line.points.every(isFinitePoint));
 }
 
 export function projectWorldPoint(pose: PoseResult, point: Point3D): Point2D | undefined {
@@ -145,6 +176,59 @@ function sampleWorldLine(from: Point3D, to: Point3D, segments: number): Point3D[
     });
   }
   return points;
+}
+
+function turfWorldLine(
+  id: string,
+  label: string,
+  kind: PitchOverlayLine["kind"],
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  pointFor: (xInches: number, yInches: number) => Point2D,
+): PitchOverlayLine {
+  const points: Point2D[] = [];
+  const segments = 18;
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    points.push(pointFor(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t));
+  }
+  return { id, label, kind, points };
+}
+
+function turfPointAt(turfPlane: TurfPlane, t: number, xInches: number): Point2D {
+  const left = interpolate(turfPlane.leftEdge.near, turfPlane.leftEdge.far, t);
+  const right = interpolate(turfPlane.rightEdge.near, turfPlane.rightEdge.far, t);
+  const xFraction = (xInches + NET_TURF_WIDTH_INCHES / 2) / NET_TURF_WIDTH_INCHES;
+  return interpolate(left, right, xFraction);
+}
+
+function turfParameterForPoint(point: Point2D, turfPlane: TurfPlane): number {
+  const nearCenter = midpoint(turfPlane.leftEdge.near, turfPlane.rightEdge.near);
+  const farCenter = midpoint(turfPlane.leftEdge.far, turfPlane.rightEdge.far);
+  const axis = { x: farCenter.x - nearCenter.x, y: farCenter.y - nearCenter.y };
+  const lengthSquared = axis.x * axis.x + axis.y * axis.y;
+  if (lengthSquared < 1e-6) return 0;
+  return ((point.x - nearCenter.x) * axis.x + (point.y - nearCenter.y) * axis.y) / lengthSquared;
+}
+
+function interpolate(a: Point2D, b: Point2D, t: number): Point2D {
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  };
+}
+
+function midpoint(a: Point2D, b: Point2D): Point2D {
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  };
+}
+
+function isFinitePoint(point: Point2D): boolean {
+  return Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
 function rodrigues(rvec: [number, number, number]) {

@@ -1,4 +1,4 @@
-import { angleDegrees, distance, normalizeAngleDegrees } from "./geometry";
+import { angleDegrees, distance, midpoint, normalizeAngleDegrees } from "./geometry";
 import { canvasFromImage, type OpenCv } from "./opencv";
 import type { CandidateLine, ImageSize, LandmarkMap, Point2D } from "./types";
 
@@ -30,11 +30,19 @@ type BatCandidate = {
 export type SetupDetectionResult = {
   landmarks: LandmarkMap;
   candidateLines: CandidateLine[];
+  turfPlane?: TurfPlane;
   confidence: number;
   detectedStumpCount: number;
   detectedBat: boolean;
   batConfidence?: "strong" | "weak";
   warnings: string[];
+};
+
+export type TurfPlane = {
+  polygon: Point2D[];
+  leftEdge: { near: Point2D; far: Point2D };
+  rightEdge: { near: Point2D; far: Point2D };
+  confidence: number;
 };
 
 export function defaultLandmarks(size: ImageSize): LandmarkMap {
@@ -100,6 +108,7 @@ export function detectCandidateLines(cv: OpenCv, image: HTMLImageElement): Candi
 
 export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionResult {
   const scaled = scaledImageDataFromImage(image, 1280);
+  const turfPlane = detectTurfPlane(scaled.data, scaled.width, scaled.height);
   const rawMask = buildWoodMask(scaled.data, scaled.width, scaled.height);
   const mask = closeMask(rawMask, scaled.width, scaled.height);
   const { components, labels } = connectedComponents(mask, scaled.width, scaled.height);
@@ -136,7 +145,13 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
       );
     }
 
-    const bat = findBatTip(mask, labels, components, fallbackStumps, scaled.width, scaled.height);
+    if (turfPlane) {
+      for (const line of turfPlaneLines(turfPlane)) {
+        candidateLines.push(scaleLine(line, scaled.scale));
+      }
+    }
+
+    const bat = findBatTip(mask, labels, components, fallbackStumps, scaled.width, scaled.height, turfPlane);
     if (bat) {
       if (bat.toe && selectedStumps.length < 2) {
         landmarks.middleStumpBase = scalePoint(bat.toe, scaled.scale);
@@ -184,6 +199,7 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
   return {
     landmarks,
     candidateLines,
+    turfPlane: turfPlane ? scaleTurfPlane(turfPlane, scaled.scale) : undefined,
     confidence: Math.max(0, confidence),
     detectedStumpCount: Math.min(3, fallbackStumps.length),
     detectedBat,
@@ -225,6 +241,170 @@ function scaledImageDataFromImage(image: HTMLImageElement, maxSide: number) {
     height,
     scale: naturalWidth / width,
     data: context.getImageData(0, 0, width, height).data,
+  };
+}
+
+function detectTurfPlane(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+): TurfPlane | undefined {
+  let mask = buildGreenMask(data, width, height);
+  for (let i = 0; i < 6; i += 1) mask = dilate(mask, width, height);
+  for (let i = 0; i < 5; i += 1) mask = erode(mask, width, height);
+
+  const { labels, components } = connectedComponents(mask, width, height);
+  const largest = components
+    .filter((component) => component.area > width * height * 0.05)
+    .sort((a, b) => b.area - a.area)[0];
+
+  if (!largest) return undefined;
+
+  const samples = turfBoundarySamples(labels, largest.id, largest, width);
+  if (samples.left.length < 8 || samples.right.length < 8) return undefined;
+
+  const leftFit = fitXByY(samples.left);
+  const rightFit = fitXByY(samples.right);
+  const yFar = Math.max(0, largest.minY);
+  const yNear = Math.min(height - 1, largest.maxY);
+
+  const leftFar = { x: leftFit(yFar), y: yFar };
+  const leftNear = { x: leftFit(yNear), y: yNear };
+  const rightFar = { x: rightFit(yFar), y: yFar };
+  const rightNear = { x: rightFit(yNear), y: yNear };
+
+  const polygon = [leftFar, rightFar, rightNear, leftNear].map((point) => ({
+    x: Math.min(Math.max(point.x, 0), width - 1),
+    y: Math.min(Math.max(point.y, 0), height - 1),
+  }));
+
+  const confidence = Math.min(1, largest.area / (width * height * 0.35));
+
+  return {
+    polygon,
+    leftEdge: { near: polygon[3], far: polygon[0] },
+    rightEdge: { near: polygon[2], far: polygon[1] },
+    confidence,
+  };
+}
+
+function buildGreenMask(data: Uint8ClampedArray, width: number, height: number): Uint8Array {
+  const mask = new Uint8Array(width * height);
+  for (let y = Math.floor(height * 0.22); y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const pixel = (y * width + x) * 4;
+      const r = data[pixel] / 255;
+      const g = data[pixel + 1] / 255;
+      const b = data[pixel + 2] / 255;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const saturation = max === 0 ? 0 : (max - min) / max;
+      const hue = rgbHueDegrees(r, g, b, max, min);
+      const excessGreen = 2 * g - r - b;
+
+      if (hue >= 65 && hue <= 185 && saturation > 0.18 && max > 0.14 && excessGreen > 0.08) {
+        mask[y * width + x] = 1;
+      }
+    }
+  }
+  return mask;
+}
+
+function rgbHueDegrees(r: number, g: number, b: number, max: number, min: number): number {
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let hue: number;
+  if (max === r) {
+    hue = 60 * (((g - b) / delta) % 6);
+  } else if (max === g) {
+    hue = 60 * ((b - r) / delta + 2);
+  } else {
+    hue = 60 * ((r - g) / delta + 4);
+  }
+  return hue < 0 ? hue + 360 : hue;
+}
+
+function turfBoundarySamples(
+  labels: Int32Array,
+  label: number,
+  component: DetectionComponent,
+  width: number,
+) {
+  const left: Point2D[] = [];
+  const right: Point2D[] = [];
+  const stride = 4;
+
+  for (let y = component.minY; y <= component.maxY; y += stride) {
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let count = 0;
+    const rowOffset = y * width;
+
+    for (let x = component.minX; x <= component.maxX; x += 1) {
+      if (labels[rowOffset + x] !== label) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      count += 1;
+    }
+
+    if (count > width * 0.03) {
+      left.push({ x: minX, y });
+      right.push({ x: maxX, y });
+    }
+  }
+
+  return { left, right };
+}
+
+function fitXByY(points: Point2D[]) {
+  const n = points.length;
+  const sumY = points.reduce((sum, point) => sum + point.y, 0);
+  const sumX = points.reduce((sum, point) => sum + point.x, 0);
+  const sumYY = points.reduce((sum, point) => sum + point.y * point.y, 0);
+  const sumYX = points.reduce((sum, point) => sum + point.y * point.x, 0);
+  const denominator = n * sumYY - sumY * sumY;
+  if (Math.abs(denominator) < 1e-6) {
+    const x = sumX / n;
+    return () => x;
+  }
+
+  const a = (n * sumYX - sumY * sumX) / denominator;
+  const b = (sumX - a * sumY) / n;
+  return (y: number) => a * y + b;
+}
+
+function turfPlaneLines(turfPlane: TurfPlane): CandidateLine[] {
+  return [
+    turfLine("turf-left-edge", turfPlane.leftEdge.near, turfPlane.leftEdge.far),
+    turfLine("turf-right-edge", turfPlane.rightEdge.near, turfPlane.rightEdge.far),
+    turfLine("turf-back-width", turfPlane.leftEdge.far, turfPlane.rightEdge.far),
+    turfLine("turf-front-width", turfPlane.leftEdge.near, turfPlane.rightEdge.near),
+  ];
+}
+
+function turfLine(id: string, start: Point2D, end: Point2D): CandidateLine {
+  return {
+    id,
+    start,
+    end,
+    lengthPx: distance(start, end),
+    angleDegrees: normalizeAngleDegrees(angleDegrees(start, end)),
+    classification: "crease",
+  };
+}
+
+function scaleTurfPlane(turfPlane: TurfPlane, scale: number): TurfPlane {
+  return {
+    polygon: turfPlane.polygon.map((point) => scalePoint(point, scale)),
+    leftEdge: {
+      near: scalePoint(turfPlane.leftEdge.near, scale),
+      far: scalePoint(turfPlane.leftEdge.far, scale),
+    },
+    rightEdge: {
+      near: scalePoint(turfPlane.rightEdge.near, scale),
+      far: scalePoint(turfPlane.rightEdge.far, scale),
+    },
+    confidence: turfPlane.confidence,
   };
 }
 
@@ -610,6 +790,7 @@ function findBatTip(
   stumps: StumpCandidate[],
   width: number,
   height: number,
+  turfPlane?: TurfPlane,
 ): BatCandidate | undefined {
   const [left, middle, right] = normalizeThreeStumps(stumps);
   const base = { x: middle.x, y: middle.baseY };
@@ -648,7 +829,37 @@ function findBatTip(
     };
   }
 
-  return findWeakBatTip(mask, labels, components, stumps, width, height);
+  const weakBat = findWeakBatTip(mask, labels, components, stumps, width, height, turfPlane);
+  if (weakBat) return weakBat;
+
+  return inferBatFromTurfPlane(stumps, turfPlane);
+}
+
+function inferBatFromTurfPlane(
+  stumps: StumpCandidate[],
+  turfPlane: TurfPlane | undefined,
+): BatCandidate | undefined {
+  if (!turfPlane || !stumps.length) return undefined;
+
+  const [left, middle, right] = normalizeThreeStumps(stumps);
+  const base = { x: middle.x, y: middle.baseY };
+  const nearCenter = midpoint(turfPlane.leftEdge.near, turfPlane.rightEdge.near);
+  const farCenter = midpoint(turfPlane.leftEdge.far, turfPlane.rightEdge.far);
+  const towardNear = unitVector({
+    x: nearCenter.x - farCenter.x,
+    y: nearCenter.y - farCenter.y,
+  });
+  const stumpHeight = mean([left.height, middle.height, right.height]);
+  const inferredLength = Math.max(stumpHeight * 1.05, middle.width * 5);
+
+  return {
+    toe: base,
+    tip: {
+      x: base.x + towardNear.x * inferredLength,
+      y: base.y + towardNear.y * inferredLength,
+    },
+    confidence: "weak",
+  };
 }
 
 function findWeakBatTip(
@@ -658,6 +869,7 @@ function findWeakBatTip(
   stumps: StumpCandidate[],
   width: number,
   height: number,
+  turfPlane?: TurfPlane,
 ): BatCandidate | undefined {
   const [left, middle, right] = normalizeThreeStumps(stumps);
   const base = { x: middle.x, y: middle.baseY };
@@ -677,6 +889,7 @@ function findWeakBatTip(
     const aspect = boxWidth / Math.max(boxHeight, 1);
     const centerY = component.center.y;
     if (component.area < 90) continue;
+    if (turfPlane && !pointInPolygon(component.center, turfPlane.polygon)) continue;
     if (centerY < height * 0.38 || centerY > height * 0.94) continue;
     if (boxWidth < width * 0.045 && boxHeight < height * 0.045) continue;
     if (aspect < 1.7 && boxHeight / Math.max(boxWidth, 1) < 1.7) continue;
@@ -707,7 +920,7 @@ function findWeakBatTip(
   }
 
   if (!best) {
-    best = findGlobalBatBlade(mask, labels, components, base, width, height);
+    best = findGlobalBatBlade(mask, labels, components, base, width, height, turfPlane);
   }
 
   if (!best) return undefined;
@@ -726,6 +939,7 @@ function findGlobalBatBlade(
   base: Point2D,
   width: number,
   height: number,
+  turfPlane?: TurfPlane,
 ):
   | {
       score: number;
@@ -746,6 +960,7 @@ function findGlobalBatBlade(
     const boxHeight = component.maxY - component.minY + 1;
     const aspect = boxWidth / Math.max(boxHeight, 1);
     if (component.area < 120) continue;
+    if (turfPlane && componentTurfCoverage(component, turfPlane.polygon) < 0.45) continue;
     if (component.center.y < height * 0.42 || component.center.y > height * 0.94) continue;
     if (aspect < 1.45 || boxWidth < width * 0.055 || boxHeight > height * 0.22) continue;
 
@@ -893,6 +1108,35 @@ function distanceToBox(point: Point2D, component: DetectionComponent): number {
   const dx = Math.max(component.minX - point.x, 0, point.x - component.maxX);
   const dy = Math.max(component.minY - point.y, 0, point.y - component.maxY);
   return Math.hypot(dx, dy);
+}
+
+function componentTurfCoverage(component: DetectionComponent, polygon: Point2D[]): number {
+  const xStep = Math.max(1, Math.floor((component.maxX - component.minX + 1) / 8));
+  const yStep = Math.max(1, Math.floor((component.maxY - component.minY + 1) / 8));
+  let total = 0;
+  let inside = 0;
+
+  for (let y = component.minY; y <= component.maxY; y += yStep) {
+    for (let x = component.minX; x <= component.maxX; x += xStep) {
+      total += 1;
+      if (pointInPolygon({ x, y }, polygon)) inside += 1;
+    }
+  }
+
+  return total ? inside / total : 0;
+}
+
+function pointInPolygon(point: Point2D, polygon: Point2D[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const intersects =
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || 1e-9) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
 }
 
 function range(values: number[]): number {

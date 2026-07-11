@@ -23,13 +23,18 @@ system.
     base
   - can make a low-confidence side-angle bat suggestion from a horizontal
     turf-level blade when the contact point is hidden by the net
+  - uses the detected green turf plane to reject bat-like objects outside the
+    lane, including side bats lying on the concrete
+  - can infer a weak bat suggestion from the middle stump along the turf/pitch
+    direction when the bat is barely visible
   - reports low confidence/warnings instead of guessing on unsuitable frames
 - Uses the 33.5 inch bat as the physical scale reference.
 - Uses stump height/width plus the bat reference in `solvePnP` to estimate phone
   position relative to the middle stump.
-- Projects real cricket pitch geometry back onto the camera image after pose
-  solve, including pitch edges, centre line, bowling crease, popping crease,
-  return creases, and the far wicket creases.
+- Projects real cricket pitch geometry back onto the camera image. When the turf
+  plane is detected, the overlay uses the 13 ft turf/net width plus the bat
+  calibration so pitch edges and crease lines follow the turf perspective. It
+  falls back to camera pose projection when no turf plane is available.
 - Reports average and maximum reprojection error so inaccurate calibrations are
   visible immediately.
 - Exports calibration JSON for future game-simulation steps.
@@ -39,14 +44,16 @@ system.
 This first slice is intentionally assisted instead of pretending every image can
 be solved blindly. The supplied setup has strong net and strap lines that can
 overwhelm generic edge detectors, so the app first suggests points from
-setup-specific wood/geometry detection, then requires manual confirmation. A
-single phone image plus one known bat length can establish scale, but an accurate
-phone pose also needs enough known 3D scene points. The app therefore combines:
+setup-specific turf/wood/geometry detection, then requires manual confirmation.
+A single phone image plus one known bat length can establish scale, but an
+accurate phone pose also needs enough known 3D scene points. The app therefore
+combines:
 
 1. Known cricket dimensions: 33.5 inch bat, 28 inch stumps, 9 inch wicket width.
-2. User-confirmed landmark positions.
-3. Sub-pixel OpenCV refinement.
-4. Reprojection-error checks.
+2. Known setup dimensions: 13 ft turf/net width.
+3. User-confirmed landmark positions.
+4. Sub-pixel OpenCV refinement.
+5. Reprojection-error checks.
 
 For best results, keep the bat flat on the pitch with one end touching the
 middle stump and aligned down the pitch center line. Recalibrate if the phone
