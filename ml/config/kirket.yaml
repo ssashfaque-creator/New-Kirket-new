@@ -1,0 +1,10 @@
+path: dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: ball
+  1: bat
+  2: middle_stump
+  3: outer_stump
