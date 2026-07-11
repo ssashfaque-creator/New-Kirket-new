@@ -14,25 +14,34 @@ export function loadOpenCv(): Promise<OpenCv> {
   if (window.cv?.Mat) return Promise.resolve(window.cv);
   if (loadingPromise) return loadingPromise;
 
-  loadingPromise = (async () => {
-    try {
-      const imported = (await import("@techstark/opencv-js")) as any;
-      const candidate = imported.default ?? imported;
-      const cv = typeof candidate?.then === "function" ? await candidate : candidate;
-      if (cv?.Mat) {
-        window.cv = cv;
-        return cv;
-      }
-      return await waitForOpenCv(cv);
-    } catch (error) {
-      loadingPromise = undefined;
-      throw new Error(
-        error instanceof Error
-          ? `Local OpenCV failed to load: ${error.message}`
-          : "Local OpenCV failed to load.",
-      );
+  loadingPromise = new Promise((resolve, reject) => {
+    const scriptUrl = new URL("opencv.js", document.baseURI).toString();
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${scriptUrl}"]`);
+
+    const finishWhenReady = () => {
+      waitForOpenCv(window.cv)
+        .then(resolve)
+        .catch((error) => {
+          loadingPromise = undefined;
+          reject(error);
+        });
+    };
+
+    if (existing) {
+      finishWhenReady();
+      return;
     }
-  })();
+
+    const script = document.createElement("script");
+    script.src = scriptUrl;
+    script.async = true;
+    script.onload = finishWhenReady;
+    script.onerror = () => {
+      loadingPromise = undefined;
+      reject(new Error("Local OpenCV script failed to load."));
+    };
+    document.body.appendChild(script);
+  });
 
   return loadingPromise;
 }
