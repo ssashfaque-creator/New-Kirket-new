@@ -4,3 +4,11 @@ dist/
 vite.config.js
 vite.config.d.ts
 .DS_Store
+ml/.venv/
+ml/dataset/
+ml/runs/
+ml/**/*.pt
+ml/**/*.onnx
+ml/**/*.mlpackage/
+ios/KirketPro/*.xcodeproj/
+ios/KirketPro/DerivedData/

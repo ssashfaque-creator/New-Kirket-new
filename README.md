@@ -1,5 +1,10 @@
 # Kirket calibration prototype
 
+> The web PWA remains a simulator and field-test interface. The professional
+> measurement engine is now being built as a native iOS app under
+> `ios/KirketPro`, using metric QR calibration, AVFoundation 120/240 fps capture,
+> Vision tracking, and a custom CoreML model path.
+
 This repository now contains the first step of a phone-first cricket-net app: a
 calibration workflow that turns one setup image into a measured coordinate
 system.
@@ -132,6 +137,13 @@ iPhone 16 Pro capture protocol and detector limitations.
 
 See [`docs/CUSTOM_BALL_MODEL.md`](docs/CUSTOM_BALL_MODEL.md) for the labeled
 dataset and custom YOLO/ONNX path needed to move beyond generic sports-ball AI.
+
+Native implementation:
+
+- [`ios/KirketPro/README.md`](ios/KirketPro/README.md)
+- [native build/TestFlight guide](docs/NATIVE_IOS_TESTFLIGHT.md)
+- printable target: [`docs/KIRKET_METRIC_TARGET_A4.svg`](docs/KIRKET_METRIC_TARGET_A4.svg)
+- model training/export: [`ml/README.md`](ml/README.md)
 
 See [`docs/INSTALL_IPHONE.md`](docs/INSTALL_IPHONE.md) for HTTPS deployment,
 Add-to-Home-Screen installation, privacy, and the first field-test checklist.

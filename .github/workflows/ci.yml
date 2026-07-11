@@ -20,3 +20,23 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  native-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/KirketPro
+        run: xcodegen generate
+      - name: Build and test iOS app
+        working-directory: ios/KirketPro
+        run: |
+          xcodebuild \
+            -project KirketPro.xcodeproj \
+            -scheme KirketPro \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            CODE_SIGNING_ALLOWED=NO \
+            test

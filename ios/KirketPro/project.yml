@@ -1,0 +1,42 @@
+name: KirketPro
+options:
+  bundleIdPrefix: com.kirket
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  KirketPro:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    resources:
+      - Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kirket.pro
+        PRODUCT_NAME: Kirket Pro
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: false
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: Kirket Pro
+        INFOPLIST_KEY_NSCameraUsageDescription: Kirket uses the main camera for metric calibration and high-speed cricket-ball tracking.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Kirket can import original high-frame-rate cricket videos for analysis.
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    scheme:
+      testTargets:
+        - KirketProTests
+  KirketProTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: KirketPro
