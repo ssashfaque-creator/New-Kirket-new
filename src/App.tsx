@@ -12,6 +12,8 @@ import { calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
 import { buildPitchOverlayLines, buildTurfPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
+import { VirtualGround } from "./ground/VirtualGround";
+import { FIELD_PRESETS, GROUND_PRESETS } from "./ground/virtualGround";
 import type {
   CalibrationResult,
   CandidateLine,
@@ -46,6 +48,8 @@ function App() {
   const [isPanMode, setIsPanMode] = useState(false);
   const [pan, setPan] = useState<Point2D>({ x: 0, y: 0 });
   const [panningFrom, setPanningFrom] = useState<Point2D | undefined>();
+  const [selectedGroundId, setSelectedGroundId] = useState(GROUND_PRESETS[3].id);
+  const [selectedFieldId, setSelectedFieldId] = useState(FIELD_PRESETS[3].id);
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
@@ -57,6 +61,8 @@ function App() {
     },
     [detection?.turfPlane, landmarks, result?.pose],
   );
+  const selectedGround = GROUND_PRESETS.find((ground) => ground.id === selectedGroundId) ?? GROUND_PRESETS[0];
+  const selectedField = FIELD_PRESETS.find((field) => field.id === selectedFieldId) ?? FIELD_PRESETS[0];
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -550,6 +556,13 @@ function App() {
           </section>
         </aside>
       </section>
+
+      <VirtualGround
+        ground={selectedGround}
+        field={selectedField}
+        onGroundChange={setSelectedGroundId}
+        onFieldChange={setSelectedFieldId}
+      />
     </main>
   );
 }

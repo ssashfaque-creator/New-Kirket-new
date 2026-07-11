@@ -46,6 +46,13 @@ system.
 - Reports average and maximum reprojection error so inaccurate calibrations are
   visible immediately.
 - Exports calibration JSON for future game-simulation steps.
+- Provides a virtual cricket ground environment:
+  - 10 selectable boundary-size presets from compact practice grounds to large
+    oval-style grounds
+  - field presets for pace, spin, T20 defensive, ODI balanced, Test ring, and
+    leg-side trap setups
+  - visual boundary, pitch, range rings, and fielder map
+  - visible ground metrics for straight/square boundary and approximate area
 
 ## Accuracy notes
 
@@ -76,6 +83,7 @@ Recommended workflow:
 5. Correct `turfBackLeft` / `turfBackRight` on the back 13 ft turf edge.
 6. Correct `creaseLeft` / `creaseRight` if the overlay angle needs adjustment.
 7. Run calibration and inspect the dimension labels.
+8. Select a virtual ground and field preset to define the match environment.
 
 ## Run locally
 

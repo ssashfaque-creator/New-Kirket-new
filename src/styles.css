@@ -424,6 +424,130 @@ h2 {
   line-height: 1.45;
 }
 
+.panel-subtitle {
+  margin: 0.35rem 0 0;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.virtual-ground {
+  margin-top: 1rem;
+}
+
+.ground-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 1rem 0;
+}
+
+.ground-controls label {
+  display: grid;
+  gap: 0.45rem;
+  color: #cbd5e1;
+  font-weight: 800;
+}
+
+.ground-controls select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  padding: 0.8rem;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.76);
+}
+
+.ground-stage {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 24px;
+  background: #052e16;
+}
+
+.ground-stage svg {
+  display: block;
+  width: 100%;
+  max-height: 74vh;
+}
+
+.ground-boundary-fill {
+  fill: url("#groundGrass");
+}
+
+.ground-boundary-line {
+  fill: none;
+  stroke: #f8fafc;
+  stroke-width: 4;
+}
+
+.ground-range-ring {
+  fill: none;
+  stroke: rgba(226, 232, 240, 0.28);
+  stroke-dasharray: 8 10;
+}
+
+.ground-pitch rect {
+  fill: #d6b36a;
+  stroke: rgba(15, 23, 42, 0.5);
+  stroke-width: 1.5;
+}
+
+.ground-crease {
+  stroke: #f8fafc;
+  stroke-width: 3;
+}
+
+.striker-dot {
+  fill: #fbbf24;
+  stroke: #020617;
+  stroke-width: 2;
+}
+
+.fielder circle {
+  fill: #38bdf8;
+  stroke: #f8fafc;
+  stroke-width: 3;
+}
+
+.fielder.catching circle {
+  fill: #f97316;
+}
+
+.fielder text {
+  fill: #f8fafc;
+  font-size: 15px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #052e16;
+  stroke-width: 5;
+}
+
+.ground-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+}
+
+.ground-stats div {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  padding: 0.8rem;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.ground-stats dt {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.ground-stats dd {
+  margin: 0.25rem 0 0;
+  color: #f8fafc;
+  font-weight: 900;
+}
+
 @media (max-width: 1100px) {
   .hero {
     align-items: stretch;
@@ -445,6 +569,11 @@ h2 {
   }
 
   .control-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .ground-controls,
+  .ground-stats {
     grid-template-columns: 1fr;
   }
 
