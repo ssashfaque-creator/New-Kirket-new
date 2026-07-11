@@ -61,6 +61,27 @@ describe("yellow practice ball detection", () => {
     expect(tracker.summary().predictedPoints).toBe(1);
   });
 
+  it("prefers temporal and radius continuity over a brighter false positive", () => {
+    const tracker = new BallTracker(3, 0.4);
+    tracker.seed({ x: 20, y: 20 }, 6);
+    const falsePositive = {
+      ...candidate(70, 70),
+      confidence: 0.96,
+      temporalScore: 0.1,
+      radiusPx: 18,
+    };
+    const trueBall = {
+      ...candidate(24, 20),
+      confidence: 0.8,
+      temporalScore: 0.96,
+      radiusPx: 6.2,
+    };
+
+    const trackedPoint = tracker.update(0, 0, [falsePositive, trueBall]);
+
+    expect(trackedPoint?.center.x).toBeCloseTo(24, 3);
+  });
+
   it("detects a downward-to-upward velocity reversal as a bounce", () => {
     const points = [
       tracked(0, 0, 0, 200),

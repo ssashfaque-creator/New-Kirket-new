@@ -99,10 +99,12 @@ function estimateFromBallSize3d(
   const trackConfidence = average(segment.map((sample) => sample.confidence));
   const radiusConsistency = radiusConsistencyScore(points.slice(0, 10));
   const poseConfidence = clamp(1 - pose.reprojectionErrorPx / 10, 0, 1);
-  const confidence = clamp(trackConfidence * 0.45 + radiusConsistency * 0.25 + poseConfidence * 0.3, 0, 0.96);
+  const gapPenalty = clamp(tracking.longestPredictedGap * 0.07, 0, 0.35);
+  const confidence = clamp(trackConfidence * 0.45 + radiusConsistency * 0.25 + poseConfidence * 0.3 - gapPenalty, 0, 0.96);
   const warnings: string[] = [];
   if (radiusConsistency < 0.55) warnings.push("Ball radius varied strongly; motion blur may affect depth/speed.");
   if (pose.reprojectionErrorPx > 4) warnings.push("Camera pose error reduces 3D speed accuracy.");
+  if (tracking.longestPredictedGap > 3) warnings.push("A long ball occlusion reduced trajectory confidence.");
   const aspectWarning = calibrationAspectWarning(options);
   if (aspectWarning) warnings.push(aspectWarning);
 
@@ -149,7 +151,12 @@ function estimateFromTurf(
   );
   const speedMps = inchesToMeters(Math.hypot(velocity.x, velocity.y));
   const directionDegrees = normalizeDegrees((Math.atan2(velocity.x, velocity.y) * 180) / Math.PI);
-  const confidence = clamp(average(segment.map((sample) => sample.confidence)) * 0.62, 0, 0.72);
+  const confidence = clamp(
+    average(segment.map((sample) => sample.confidence)) * 0.62 -
+      clamp(tracking.longestPredictedGap * 0.06, 0, 0.3),
+    0,
+    0.72,
+  );
   const launchAngleDegrees = estimateLaunchFromPixelArc(points);
 
   if (!Number.isFinite(speedMps) || speedMps < 1 || speedMps > 80) return undefined;

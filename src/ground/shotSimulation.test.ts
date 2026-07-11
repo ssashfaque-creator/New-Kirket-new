@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { simulateShot, type ShotInput } from "./shotSimulation";
+import {
+  defaultSimulationEnvironment,
+  simulateShot,
+  simulateShotDistribution,
+  type ShotInput,
+} from "./shotSimulation";
 import { FIELD_PRESETS, GROUND_PRESETS } from "./virtualGround";
 
 const largeGround = GROUND_PRESETS.find((ground) => ground.id === "custom-practice-large")!;
@@ -52,5 +57,27 @@ describe("shot simulation", () => {
 
     expect(["fielded", "stopped", "wicketkeeper"]).toContain(result.kind);
     expect(result.runs).toBeLessThan(4);
+  });
+
+  it("produces deterministic uncertainty distributions that sum to one", () => {
+    const shot: ShotInput = {
+      angleDegrees: 30,
+      speedMps: 32,
+      launchAngleDegrees: 16,
+      quality: 0.7,
+      shotType: "drive",
+    };
+    const distribution = simulateShotDistribution(
+      shot,
+      largeGround,
+      defensiveField,
+      defaultSimulationEnvironment(),
+      80,
+    );
+    const total = Object.values(distribution.resultProbabilities).reduce((sum, value) => sum + value, 0);
+
+    expect(total).toBeCloseTo(1, 8);
+    expect(distribution.expectedRuns).toBeGreaterThanOrEqual(0);
+    expect(distribution.expectedRuns).toBeLessThanOrEqual(6);
   });
 });

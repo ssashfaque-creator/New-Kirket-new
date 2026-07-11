@@ -319,6 +319,7 @@ export function ShotDetectionPanel({
         <dl className="detection-result-grid">
           <div><dt>Detected frames</dt><dd>{tracking.detectedPoints}</dd></div>
           <div><dt>Predicted gaps</dt><dd>{tracking.predictedPoints}</dd></div>
+          <div><dt>Longest gap</dt><dd>{tracking.longestPredictedGap} frames</dd></div>
           <div><dt>Track confidence</dt><dd>{Math.round(tracking.averageConfidence * 100)}%</dd></div>
           <div><dt>Bounces</dt><dd>{tracking.bounceFrameIndices.length}</dd></div>
           <div><dt>Impact frame</dt><dd>{tracking.impactFrameIndex ?? "not resolved"}</dd></div>

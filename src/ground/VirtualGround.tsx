@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   defaultShotInput,
+  defaultSimulationEnvironment,
   shotTypeDefaults,
   simulateShot,
+  simulateShotDistribution,
+  type SimulationEnvironment,
   type ShotInput,
   type ShotType,
   type TrajectoryPoint,
@@ -40,10 +43,15 @@ export function VirtualGround({
   onFieldChange,
 }: VirtualGroundProps) {
   const [shot, setShot] = useState<ShotInput>(defaultShotInput());
+  const [environment, setEnvironment] = useState<SimulationEnvironment>(defaultSimulationEnvironment());
   const boundaryPoints = buildBoundaryPoints(ground);
   const maxBoundary = Math.max(ground.squareBoundaryM, ground.straightBoundaryM);
   const areaM2 = Math.PI * ground.squareBoundaryM * ground.straightBoundaryM;
-  const simulation = useMemo(() => simulateShot(shot, ground, field), [field, ground, shot]);
+  const simulation = useMemo(() => simulateShot(shot, ground, field, environment), [environment, field, ground, shot]);
+  const distribution = useMemo(
+    () => simulateShotDistribution(shot, ground, field, environment),
+    [environment, field, ground, shot],
+  );
   const trajectoryPoints = simulation.trajectory.map(trajectoryPointToSvg).join(" ");
 
   useEffect(() => {
@@ -153,6 +161,72 @@ export function VirtualGround({
         </label>
       </div>
 
+      <div className="environment-controls">
+        <label>
+          Surface
+          <select
+            value={environment.surface}
+            onChange={(event) =>
+              setEnvironment((current) => ({
+                ...current,
+                surface: event.target.value as SimulationEnvironment["surface"],
+              }))
+            }
+          >
+            <option value="dry-fast">Dry / fast</option>
+            <option value="standard">Standard</option>
+            <option value="damp-slow">Damp / slow</option>
+          </select>
+        </label>
+        <label>
+          Outfield speed
+          <strong>{Math.round(environment.outfieldSpeed * 100)}%</strong>
+          <input
+            min="0.65"
+            max="1.35"
+            step="0.05"
+            type="range"
+            value={environment.outfieldSpeed}
+            onChange={(event) => setEnvironment((current) => ({ ...current, outfieldSpeed: Number(event.target.value) }))}
+          />
+        </label>
+        <label>
+          Wind
+          <strong>{environment.windSpeedMps.toFixed(1)} m/s</strong>
+          <input
+            min="0"
+            max="12"
+            step="0.5"
+            type="range"
+            value={environment.windSpeedMps}
+            onChange={(event) => setEnvironment((current) => ({ ...current, windSpeedMps: Number(event.target.value) }))}
+          />
+        </label>
+        <label>
+          Wind direction
+          <strong>{Math.round(environment.windDirectionDegrees)} deg</strong>
+          <input
+            min="0"
+            max="359"
+            type="range"
+            value={environment.windDirectionDegrees}
+            onChange={(event) => setEnvironment((current) => ({ ...current, windDirectionDegrees: Number(event.target.value) }))}
+          />
+        </label>
+        <label>
+          Fielder skill
+          <strong>{Math.round(environment.fielderSkill * 100)}%</strong>
+          <input
+            min="0.35"
+            max="1"
+            step="0.05"
+            type="range"
+            value={environment.fielderSkill}
+            onChange={(event) => setEnvironment((current) => ({ ...current, fielderSkill: Number(event.target.value) }))}
+          />
+        </label>
+      </div>
+
       <div className="ground-stage">
         <svg viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`} role="img" aria-label="Virtual cricket ground">
           <defs>
@@ -240,6 +314,19 @@ export function VirtualGround({
       <div className={`simulation-result ${simulation.kind}`}>
         <strong>{simulation.runs} run{simulation.runs === 1 ? "" : "s"} - {simulation.kind.toUpperCase()}</strong>
         <span>{simulation.description}</span>
+      </div>
+
+      <div className="probability-panel">
+        <strong>160-run uncertainty model: {distribution.expectedRuns.toFixed(2)} expected runs</strong>
+        <div className="probability-bars">
+          {(["six", "four", "caught", "fielded", "stopped"] as const).map((kind) => (
+            <div key={kind}>
+              <span>{kind}</span>
+              <progress max="1" value={distribution.resultProbabilities[kind]} />
+              <b>{Math.round(distribution.resultProbabilities[kind] * 100)}%</b>
+            </div>
+          ))}
+        </div>
       </div>
 
       <dl className="ground-stats">

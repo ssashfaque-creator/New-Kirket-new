@@ -3,6 +3,22 @@ import type { FieldPreset, FieldingPosition, GroundPreset } from "./virtualGroun
 
 export type ShotType = "drive" | "lofted" | "pull" | "cut" | "defensive";
 export type ShotResultKind = "six" | "four" | "caught" | "fielded" | "stopped" | "wicketkeeper";
+export type SurfaceCondition = "dry-fast" | "standard" | "damp-slow";
+
+export type SimulationEnvironment = {
+  surface: SurfaceCondition;
+  outfieldSpeed: number;
+  windSpeedMps: number;
+  windDirectionDegrees: number;
+  fielderSkill: number;
+};
+
+export type SimulationDistribution = {
+  iterations: number;
+  expectedRuns: number;
+  resultProbabilities: Record<ShotResultKind, number>;
+  runProbabilities: Record<number, number>;
+};
 
 export type ShotInput = {
   angleDegrees: number;
@@ -56,12 +72,13 @@ export function simulateShot(
   input: ShotInput,
   ground: GroundPreset,
   field: FieldPreset,
+  environment: SimulationEnvironment = defaultSimulationEnvironment(),
 ): ShotSimulationResult {
   const normalized = normalizeInput(input);
-  const trajectory = buildTrajectory(normalized, ground);
+  const trajectory = buildTrajectory(normalized, ground, environment);
   const landingPoint = trajectory.find((point) => point.phase === "bounce" || point.phase === "roll");
   const boundaryPoint = interpolatedBoundaryPoint(trajectory, ground);
-  const catchAttempt = bestCatchAttempt(trajectory, field.positions, ground);
+  const catchAttempt = bestCatchAttempt(trajectory, field.positions, ground, environment);
 
   if (catchAttempt && catchAttempt.catchChance >= 0.72 && (!boundaryPoint || catchAttempt.interceptTimeS < boundaryPoint.timeS)) {
     return {
@@ -91,7 +108,7 @@ export function simulateShot(
     };
   }
 
-  const groundAttempt = bestGroundInterception(trajectory, field.positions, ground);
+  const groundAttempt = bestGroundInterception(trajectory, field.positions, ground, environment);
   if (groundAttempt) {
     const runs = estimateCompletedRuns(groundAttempt);
     const kind: ShotResultKind = groundAttempt.label === "WK" ? "wicketkeeper" : runs === 0 ? "stopped" : "fielded";
@@ -115,6 +132,57 @@ export function simulateShot(
     trajectory,
     landingPoint,
     confidence: 0.48,
+  };
+}
+
+export function defaultSimulationEnvironment(): SimulationEnvironment {
+  return {
+    surface: "standard",
+    outfieldSpeed: 1,
+    windSpeedMps: 0,
+    windDirectionDegrees: 0,
+    fielderSkill: 0.78,
+  };
+}
+
+export function simulateShotDistribution(
+  input: ShotInput,
+  ground: GroundPreset,
+  field: FieldPreset,
+  environment: SimulationEnvironment,
+  iterations = 160,
+): SimulationDistribution {
+  const random = mulberry32(simulationSeed(input, ground, field, environment));
+  const resultCounts = emptyResultCounts();
+  const runCounts: Record<number, number> = {};
+  let totalRuns = 0;
+
+  for (let index = 0; index < iterations; index += 1) {
+    const qualityUncertainty = 1 - input.quality;
+    const perturbed: ShotInput = {
+      ...input,
+      speedMps: Math.max(2, input.speedMps * (1 + gaussian(random) * (0.025 + qualityUncertainty * 0.09))),
+      angleDegrees: input.angleDegrees + gaussian(random) * (1.5 + qualityUncertainty * 7),
+      launchAngleDegrees: input.launchAngleDegrees + gaussian(random) * (1 + qualityUncertainty * 4),
+      quality: clamp(input.quality + gaussian(random) * 0.04, 0, 1),
+    };
+    const perturbedEnvironment = {
+      ...environment,
+      fielderSkill: clamp(environment.fielderSkill + gaussian(random) * 0.055, 0.35, 1),
+    };
+    const result = simulateShot(perturbed, ground, field, perturbedEnvironment);
+    resultCounts[result.kind] += 1;
+    runCounts[result.runs] = (runCounts[result.runs] ?? 0) + 1;
+    totalRuns += result.runs;
+  }
+
+  return {
+    iterations,
+    expectedRuns: totalRuns / iterations,
+    resultProbabilities: mapCountsToProbabilities(resultCounts, iterations),
+    runProbabilities: Object.fromEntries(
+      Object.entries(runCounts).map(([runs, count]) => [Number(runs), count / iterations]),
+    ),
   };
 }
 
@@ -154,10 +222,16 @@ function normalizeInput(input: ShotInput): ShotInput {
   };
 }
 
-function buildTrajectory(input: ShotInput, ground: GroundPreset): TrajectoryPoint[] {
+function buildTrajectory(
+  input: ShotInput,
+  ground: GroundPreset,
+  environment: SimulationEnvironment,
+): TrajectoryPoint[] {
   const angleRadians = (input.angleDegrees * Math.PI) / 180;
   const launchRadians = (input.launchAngleDegrees * Math.PI) / 180;
-  let horizontalSpeed = input.speedMps * Math.cos(launchRadians);
+  const initialHorizontalSpeed = input.speedMps * Math.cos(launchRadians);
+  let velocityX = Math.sin(angleRadians) * initialHorizontalSpeed;
+  let velocityY = Math.cos(angleRadians) * initialHorizontalSpeed;
   let verticalSpeed = input.speedMps * Math.sin(launchRadians);
   let x = 0;
   let y = 0;
@@ -167,32 +241,41 @@ function buildTrajectory(input: ShotInput, ground: GroundPreset): TrajectoryPoin
   const boundaryLimit = Math.max(ground.squareBoundaryM, ground.straightBoundaryM) + 18;
 
   for (let time = 0; time <= MAX_TIME_SECONDS; time += TIME_STEP_SECONDS) {
+    const horizontalSpeed = Math.hypot(velocityX, velocityY);
     const speed = phase === "air" ? Math.hypot(horizontalSpeed, verticalSpeed) : horizontalSpeed;
     points.push({ timeS: time, xM: x, yM: y, zM: z, speedMps: speed, phase });
 
     if (distanceXY(x, y) > boundaryLimit || (phase === "roll" && horizontalSpeed <= 0.35)) break;
 
     if (phase === "air") {
-      x += Math.sin(angleRadians) * horizontalSpeed * TIME_STEP_SECONDS;
-      y += Math.cos(angleRadians) * horizontalSpeed * TIME_STEP_SECONDS;
+      x += velocityX * TIME_STEP_SECONDS;
+      y += velocityY * TIME_STEP_SECONDS;
       z += verticalSpeed * TIME_STEP_SECONDS;
       verticalSpeed -= GRAVITY * TIME_STEP_SECONDS;
-      horizontalSpeed *= BALL_CARRY_DRAG;
+      const wind = windVector(environment);
+      velocityX = velocityX * BALL_CARRY_DRAG + (wind.x - velocityX) * 0.0018;
+      velocityY = velocityY * BALL_CARRY_DRAG + (wind.y - velocityY) * 0.0018;
 
       if (z <= 0) {
         z = 0;
         phase = "bounce";
         verticalSpeed = Math.abs(verticalSpeed) * bounceRestitution(input);
-        horizontalSpeed *= bounceSpeedRetention(input);
+        const retention = bounceSpeedRetention(input, environment);
+        velocityX *= retention;
+        velocityY *= retention;
         if (verticalSpeed < 2.2 || input.launchAngleDegrees < 8) phase = "roll";
       }
     } else if (phase === "bounce") {
       phase = "air";
       z = 0.08;
     } else {
-      x += Math.sin(angleRadians) * horizontalSpeed * TIME_STEP_SECONDS;
-      y += Math.cos(angleRadians) * horizontalSpeed * TIME_STEP_SECONDS;
-      horizontalSpeed = Math.max(0, horizontalSpeed - ROLL_DECELERATION * TIME_STEP_SECONDS);
+      x += velocityX * TIME_STEP_SECONDS;
+      y += velocityY * TIME_STEP_SECONDS;
+      const deceleration = rollDeceleration(environment);
+      const nextSpeed = Math.max(0, horizontalSpeed - deceleration * TIME_STEP_SECONDS);
+      const factor = nextSpeed / Math.max(horizontalSpeed, 1e-9);
+      velocityX *= factor;
+      velocityY *= factor;
     }
   }
 
@@ -205,10 +288,15 @@ function bounceRestitution(input: ShotInput): number {
   return 0.26;
 }
 
-function bounceSpeedRetention(input: ShotInput): number {
-  if (input.shotType === "defensive") return 0.42;
-  if (input.shotType === "cut" || input.shotType === "pull") return 0.67;
-  return 0.58;
+function bounceSpeedRetention(
+  input: ShotInput,
+  environment: SimulationEnvironment,
+): number {
+  const surfaceMultiplier =
+    environment.surface === "dry-fast" ? 1.08 : environment.surface === "damp-slow" ? 0.82 : 1;
+  if (input.shotType === "defensive") return clamp(0.42 * surfaceMultiplier, 0.28, 0.58);
+  if (input.shotType === "cut" || input.shotType === "pull") return clamp(0.67 * surfaceMultiplier, 0.35, 0.78);
+  return clamp(0.58 * surfaceMultiplier, 0.32, 0.72);
 }
 
 function interpolatedBoundaryPoint(
@@ -261,12 +349,14 @@ function bestCatchAttempt(
   trajectory: TrajectoryPoint[],
   fielders: FieldingPosition[],
   ground: GroundPreset,
+  environment: SimulationEnvironment,
 ): FielderAttempt | undefined {
   return bestAttempt(
     trajectory.filter((point) => point.zM >= 0.8 && point.phase === "air"),
     fielders,
     "catch",
     ground,
+    environment,
   );
 }
 
@@ -274,12 +364,14 @@ function bestGroundInterception(
   trajectory: TrajectoryPoint[],
   fielders: FieldingPosition[],
   ground: GroundPreset,
+  environment: SimulationEnvironment,
 ): FielderAttempt | undefined {
   return bestAttempt(
     trajectory.filter((point) => point.phase !== "air" || point.zM <= 0.3),
     fielders,
     "ground",
     ground,
+    environment,
   );
 }
 
@@ -288,13 +380,14 @@ function bestAttempt(
   fielders: FieldingPosition[],
   kind: FielderAttempt["kind"],
   ground: GroundPreset,
+  environment: SimulationEnvironment,
 ): FielderAttempt | undefined {
   let best: FielderAttempt | undefined;
 
   for (const fielder of fielders) {
     const fielderPoint = fielderCoordinates(fielder, ground);
-    const reaction = fielder.catching ? 0.35 : 0.62;
-    const speed = fielder.catching ? 5.8 : 6.8;
+    const reaction = (fielder.catching ? 0.35 : 0.62) * (1.25 - environment.fielderSkill * 0.35);
+    const speed = (fielder.catching ? 5.8 : 6.8) * (0.65 + environment.fielderSkill * 0.45);
     const pickupRadius = kind === "catch" ? 1.9 : 2.6;
 
     for (const point of points) {
@@ -303,7 +396,9 @@ function bestAttempt(
       const distanceToBall = distanceXY(point.xM - fielderPoint.xM, point.yM - fielderPoint.yM);
       if (distanceToBall > reachable) continue;
 
-      const catchChance = kind === "catch" ? estimateCatchChance(point, fielder, distanceToBall, reachable) : 0;
+      const catchChance = kind === "catch"
+        ? estimateCatchChance(point, fielder, distanceToBall, reachable, environment.fielderSkill)
+        : 0;
       const runoutChance = kind === "ground" ? estimateRunoutChance(point, fielderPoint) : 0;
       const attempt: FielderAttempt = {
         fielderId: fielder.id,
@@ -330,10 +425,11 @@ function estimateCatchChance(
   fielder: FieldingPosition,
   distanceToBall: number,
   reachable: number,
+  fielderSkill: number,
 ): number {
   const heightScore = point.zM <= 2.6 ? 0.9 : point.zM <= 5 ? 0.68 : 0.38;
   const marginScore = clamp((reachable - distanceToBall) / 4, 0, 1);
-  const skill = fielder.catching ? 0.82 : 0.58;
+  const skill = clamp((fielder.catching ? 0.82 : 0.58) * (0.6 + fielderSkill * 0.55), 0.35, 0.98);
   return clamp(heightScore * 0.45 + marginScore * 0.35 + skill * 0.2, 0, 0.96);
 }
 
@@ -370,6 +466,82 @@ function distanceFromOrigin(point: Pick<TrajectoryPoint, "xM" | "yM">): number {
 
 function distanceXY(x: number, y: number): number {
   return Math.hypot(x, y);
+}
+
+function rollDeceleration(environment: SimulationEnvironment): number {
+  const surfaceMultiplier =
+    environment.surface === "dry-fast" ? 0.78 : environment.surface === "damp-slow" ? 1.38 : 1;
+  return ROLL_DECELERATION * surfaceMultiplier / clamp(environment.outfieldSpeed, 0.65, 1.35);
+}
+
+function windVector(environment: SimulationEnvironment) {
+  const radians = (environment.windDirectionDegrees * Math.PI) / 180;
+  return {
+    x: Math.sin(radians) * environment.windSpeedMps,
+    y: Math.cos(radians) * environment.windSpeedMps,
+  };
+}
+
+function emptyResultCounts(): Record<ShotResultKind, number> {
+  return {
+    six: 0,
+    four: 0,
+    caught: 0,
+    fielded: 0,
+    stopped: 0,
+    wicketkeeper: 0,
+  };
+}
+
+function mapCountsToProbabilities(
+  counts: Record<ShotResultKind, number>,
+  total: number,
+): Record<ShotResultKind, number> {
+  return Object.fromEntries(
+    Object.entries(counts).map(([kind, count]) => [kind, count / total]),
+  ) as Record<ShotResultKind, number>;
+}
+
+function simulationSeed(
+  input: ShotInput,
+  ground: GroundPreset,
+  field: FieldPreset,
+  environment: SimulationEnvironment,
+): number {
+  const text = [
+    input.angleDegrees,
+    input.speedMps,
+    input.launchAngleDegrees,
+    input.quality,
+    ground.id,
+    field.id,
+    environment.surface,
+    environment.windSpeedMps,
+    environment.windDirectionDegrees,
+    environment.fielderSkill,
+  ].join("|");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function gaussian(random: () => number): number {
+  const u = Math.max(random(), 1e-9);
+  const v = Math.max(random(), 1e-9);
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
 function percent(value: number): string {

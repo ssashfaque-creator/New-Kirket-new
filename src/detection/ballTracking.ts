@@ -47,6 +47,7 @@ export type TrackingSummary = {
   bounceFrameIndices: number[];
   pixelDirectionDegrees?: number;
   pixelSpeedPerSecond?: number;
+  longestPredictedGap: number;
 };
 
 export type BallDetectionOptions = {
@@ -301,7 +302,18 @@ export class BallTracker {
     timeS: number,
     candidates: BallCandidate[],
   ): TrackedBallPoint | undefined {
-    const candidate = candidates.find((item) => item.confidence >= this.minimumConfidence);
+    const prediction = this.prediction;
+    const candidate = candidates
+      .filter(
+        (item) =>
+          item.confidence >= this.minimumConfidence &&
+          (item.temporalScore >= 0.08 || item.confidence >= 0.86),
+      )
+      .sort(
+        (a, b) =>
+          candidateAssociationScore(b, prediction.radiusPx) -
+          candidateAssociationScore(a, prediction.radiusPx),
+      )[0];
     const previous = this.points.at(-1);
 
     if (candidate) {
@@ -365,6 +377,7 @@ export class BallTracker {
       bounceFrameIndices,
       pixelDirectionDegrees: movement?.directionDegrees,
       pixelSpeedPerSecond: movement?.speedPxPerSecond,
+      longestPredictedGap: longestPredictedGap(visiblePoints),
     };
   }
 
@@ -400,13 +413,35 @@ export function detectBounceFrames(points: TrackedBallPoint[]): number[] {
     const beforeY = points[i - 1].velocityPxPerS.y;
     const afterY = points[i + 1].velocityPxPerS.y;
     const speed = Math.hypot(points[i].velocityPxPerS.x, points[i].velocityPxPerS.y);
-    if (beforeY > 40 && afterY < -20 && speed > 80) {
+    const radius = Math.max(points[i].radiusPx, 1);
+    if (beforeY / radius > 6 && afterY / radius < -3 && speed / radius > 12) {
       if (!bounces.length || points[i].frameIndex - bounces[bounces.length - 1] > 5) {
         bounces.push(points[i].frameIndex);
       }
     }
   }
   return bounces;
+}
+
+function candidateAssociationScore(candidate: BallCandidate, predictedRadius?: number): number {
+  const radiusContinuity = predictedRadius
+    ? clamp(1 - Math.abs(candidate.radiusPx - predictedRadius) / Math.max(predictedRadius * 1.2, 2), 0, 1)
+    : 0.6;
+  return candidate.confidence * 0.55 + candidate.temporalScore * 0.3 + radiusContinuity * 0.15;
+}
+
+function longestPredictedGap(points: TrackedBallPoint[]): number {
+  let longest = 0;
+  let current = 0;
+  for (const point of points) {
+    if (point.predicted) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  }
+  return longest;
 }
 
 function shotMovementSummary(points: TrackedBallPoint[]) {

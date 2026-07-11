@@ -7,10 +7,13 @@ export function buildCalibrationExport(
   imageSize: ImageSize | undefined,
   result: CalibrationResult | undefined,
   turfPlane?: TurfPlane,
+  assumedFov = 67,
+  groundId = "dubai-style",
+  fieldId = "odi-balanced",
 ) {
   return {
-    version: 1,
-    createdAt: new Date().toISOString(),
+    version: 2,
+    savedAt: new Date().toISOString(),
     physicalReferences: {
       batLengthInches: BAT_LENGTH_INCHES,
       wicketWidthInches: WICKET_WIDTH_INCHES,
@@ -20,5 +23,8 @@ export function buildCalibrationExport(
     landmarks,
     turfPlane,
     result,
+    assumedFov,
+    groundId,
+    fieldId,
   };
 }

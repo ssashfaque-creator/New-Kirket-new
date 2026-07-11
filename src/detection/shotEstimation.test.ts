@@ -47,6 +47,7 @@ describe("shot measurement", () => {
       predictedPoints: 0,
       averageConfidence: 0.9,
       bounceFrameIndices: [],
+      longestPredictedGap: 0,
       pixelDirectionDegrees: 16,
       pixelSpeedPerSecond: 1250,
     };

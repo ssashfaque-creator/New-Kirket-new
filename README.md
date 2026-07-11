@@ -70,6 +70,17 @@ system.
   - calibrated direction/speed/launch estimates sent directly to the simulator
   - 3D ball-size estimation when camera pose is reliable, with turf-homography
     fallback and explicit confidence warnings
+- Adds reliability and continuity features:
+  - automatic on-device calibration session persistence
+  - JSON calibration import/export and recovery
+  - geometry readiness score that blocks shot detection on invalid markers
+  - tracker association that combines confidence, predicted position, and
+    radius continuity
+  - long-occlusion penalties in measurement confidence
+- Adds simulation uncertainty and environmental controls:
+  - dry/standard/damp surfaces, outfield speed, wind, and fielder skill
+  - 160-run Monte Carlo distribution with expected runs and outcome
+    probabilities instead of one deterministic result
 
 ## Accuracy notes
 

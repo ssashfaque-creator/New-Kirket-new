@@ -12,6 +12,8 @@ import { availablePoseLandmarks, calculateBatScale, formatNumber } from "./calib
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
 import { buildPitchOverlayLines, buildTurfPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
+import { clearSession, loadSession, parseSession, saveSession } from "./calibration/session";
+import { validateCalibrationReadiness } from "./calibration/validation";
 import { ShotDetectionPanel } from "./detection/ShotDetectionPanel";
 import { VirtualGround } from "./ground/VirtualGround";
 import { FIELD_PRESETS, GROUND_PRESETS } from "./ground/virtualGround";
@@ -44,24 +46,39 @@ const SUBPIXEL_REFINABLE_LANDMARKS: LandmarkId[] = [
 ];
 
 function App() {
+  const restoredSession = useRef(loadSession()).current;
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string>();
-  const [imageSize, setImageSize] = useState<ImageSize>();
-  const [landmarks, setLandmarks] = useState<LandmarkMap>({});
+  const [imageSize, setImageSize] = useState<ImageSize | undefined>(restoredSession?.imageSize);
+  const [landmarks, setLandmarks] = useState<LandmarkMap>(restoredSession?.landmarks ?? {});
   const [selectedLandmark, setSelectedLandmark] = useState<LandmarkId>("middleStumpBase");
   const [draggingLandmark, setDraggingLandmark] = useState<LandmarkId | undefined>();
   const [candidateLines, setCandidateLines] = useState<CandidateLine[]>([]);
-  const [detection, setDetection] = useState<SetupDetectionResult>();
-  const [result, setResult] = useState<CalibrationResult>();
-  const [status, setStatus] = useState("Load a camera photo to begin.");
-  const [assumedFov, setAssumedFov] = useState(DEFAULT_CAMERA_FOV_DEGREES);
+  const [detection, setDetection] = useState<SetupDetectionResult | undefined>(
+    restoredSession?.turfPlane
+      ? {
+          landmarks: restoredSession.landmarks,
+          candidateLines: [],
+          turfPlane: restoredSession.turfPlane,
+          confidence: restoredSession.turfPlane.confidence,
+          detectedStumpCount: availablePoseLandmarks(restoredSession.landmarks).length >= 6 ? 3 : 0,
+          detectedBat: Boolean(restoredSession.landmarks.batTip),
+          warnings: [],
+        }
+      : undefined,
+  );
+  const [result, setResult] = useState<CalibrationResult | undefined>(restoredSession?.result);
+  const [status, setStatus] = useState(
+    restoredSession ? "Saved calibration restored. Upload the matching image only if you want to adjust markers." : "Load a camera photo to begin.",
+  );
+  const [assumedFov, setAssumedFov] = useState(restoredSession?.assumedFov ?? DEFAULT_CAMERA_FOV_DEGREES);
   const [showCandidates, setShowCandidates] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [isPanMode, setIsPanMode] = useState(false);
   const [pan, setPan] = useState<Point2D>({ x: 0, y: 0 });
   const [panningFrom, setPanningFrom] = useState<Point2D | undefined>();
-  const [selectedGroundId, setSelectedGroundId] = useState(GROUND_PRESETS[3].id);
-  const [selectedFieldId, setSelectedFieldId] = useState(FIELD_PRESETS[3].id);
+  const [selectedGroundId, setSelectedGroundId] = useState(restoredSession?.groundId ?? GROUND_PRESETS[3].id);
+  const [selectedFieldId, setSelectedFieldId] = useState(restoredSession?.fieldId ?? FIELD_PRESETS[3].id);
   const [detectedShot, setDetectedShot] = useState<ShotInput>();
   const [activeStage, setActiveStage] = useState<"calibrate" | "detect" | "simulate">("calibrate");
   const [busyAction, setBusyAction] = useState<string>();
@@ -79,10 +96,32 @@ function App() {
   );
   const selectedGround = GROUND_PRESETS.find((ground) => ground.id === selectedGroundId) ?? GROUND_PRESETS[0];
   const selectedField = FIELD_PRESETS.find((field) => field.id === selectedFieldId) ?? FIELD_PRESETS[0];
+  const readiness = useMemo(
+    () => validateCalibrationReadiness(landmarks, imageSize, detection?.turfPlane, result),
+    [detection?.turfPlane, imageSize, landmarks, result],
+  );
 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
   }, [imageUrl]);
+
+  useEffect(() => {
+    if (Object.keys(landmarks).length === 0) return;
+    const timeout = window.setTimeout(() => {
+      saveSession({
+        version: 2,
+        savedAt: new Date().toISOString(),
+        imageSize,
+        landmarks,
+        turfPlane: detection?.turfPlane,
+        result,
+        assumedFov,
+        groundId: selectedGroundId,
+        fieldId: selectedFieldId,
+      });
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [assumedFov, detection?.turfPlane, imageSize, landmarks, result, selectedFieldId, selectedGroundId]);
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -92,8 +131,6 @@ function App() {
       return url;
     });
     setCandidateLines([]);
-    setDetection(undefined);
-    setResult(undefined);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setStatus("Image loaded. Confirm the landmark handles before solving.");
@@ -107,7 +144,15 @@ function App() {
       height: image.naturalHeight,
     };
     setImageSize(nextSize);
-    setLandmarks(defaultLandmarks(nextSize));
+    const matchesSavedImage =
+      imageSize?.width === nextSize.width &&
+      imageSize?.height === nextSize.height &&
+      Object.keys(landmarks).length > 0;
+    if (!matchesSavedImage) {
+      setLandmarks(defaultLandmarks(nextSize));
+      setDetection(undefined);
+      setResult(undefined);
+    }
   }
 
   function updateLandmark(id: LandmarkId, point: Point2D) {
@@ -250,7 +295,15 @@ function App() {
   }
 
   async function copyExport() {
-    const payload = buildCalibrationExport(landmarks, imageSize, result, detection?.turfPlane);
+    const payload = buildCalibrationExport(
+      landmarks,
+      imageSize,
+      result,
+      detection?.turfPlane,
+      assumedFov,
+      selectedGroundId,
+      selectedFieldId,
+    );
     const json = JSON.stringify(payload, null, 2);
     try {
       await navigator.clipboard.writeText(json);
@@ -259,6 +312,46 @@ function App() {
       downloadJson(json, "kirket-calibration.json");
       setStatus("Clipboard unavailable; calibration JSON downloaded instead.");
     }
+  }
+
+  async function importCalibration(file: File | undefined) {
+    if (!file) return;
+    try {
+      const parsed = parseSession(await file.text());
+      if (!parsed) throw new Error("This is not a compatible Kirket calibration file.");
+      setImageSize(parsed.imageSize);
+      setLandmarks(parsed.landmarks);
+      setDetection(
+        parsed.turfPlane
+          ? {
+              landmarks: parsed.landmarks,
+              candidateLines: [],
+              turfPlane: parsed.turfPlane,
+              confidence: parsed.turfPlane.confidence,
+              detectedStumpCount: availablePoseLandmarks(parsed.landmarks).length >= 6 ? 3 : 0,
+              detectedBat: Boolean(parsed.landmarks.batTip),
+              warnings: [],
+            }
+          : undefined,
+      );
+      setResult(parsed.result);
+      setAssumedFov(parsed.assumedFov);
+      setSelectedGroundId(parsed.groundId);
+      setSelectedFieldId(parsed.fieldId);
+      setStatus("Calibration imported and saved on this device.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Calibration import failed.");
+    }
+  }
+
+  function resetSavedCalibration() {
+    clearSession();
+    setImageSize(undefined);
+    setLandmarks({});
+    setDetection(undefined);
+    setResult(undefined);
+    setImageUrl(undefined);
+    setStatus("Saved calibration cleared. Load a setup image to begin again.");
   }
 
   function nudgeSelectedLandmark(deltaX: number, deltaY: number) {
@@ -276,7 +369,12 @@ function App() {
         <button className={activeStage === "calibrate" ? "active" : ""} onClick={() => setActiveStage("calibrate")}>
           1. Calibrate
         </button>
-        <button className={activeStage === "detect" ? "active" : ""} onClick={() => setActiveStage("detect")}>
+        <button
+          className={activeStage === "detect" ? "active" : ""}
+          disabled={!readiness.readyForShotDetection}
+          title={readiness.readyForShotDetection ? "Open shot detection" : "Resolve calibration errors first"}
+          onClick={() => setActiveStage("detect")}
+        >
           2. Detect shot
         </button>
         <button className={activeStage === "simulate" ? "active" : ""} onClick={() => setActiveStage("simulate")}>
@@ -605,6 +703,29 @@ function App() {
             </label>
           </section>
 
+          <section className="card readiness-card">
+            <div className="section-heading">
+              <h2>Calibration readiness</h2>
+              <span className={`readiness-score ${readiness.readyForShotDetection ? "ready" : ""}`}>
+                {readiness.score}/100
+              </span>
+            </div>
+            <p className="hint">
+              {readiness.readyForShotDetection
+                ? "Ready for controlled shot detection."
+                : "Resolve the errors below before measuring shots."}
+            </p>
+            {readiness.issues.length ? (
+              <ul className="readiness-issues">
+                {readiness.issues.map((item) => (
+                  <li key={item.id} className={item.severity}>{item.message}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="readiness-ok">All geometry checks passed.</p>
+            )}
+          </section>
+
           <section className="card results-card">
             <div className="section-heading">
               <h2>Results</h2>
@@ -663,9 +784,14 @@ function App() {
               </ul>
             ) : null}
 
-            <button disabled={!imageSize} onClick={copyExport}>
-              Copy calibration JSON
-            </button>
+            <div className="calibration-file-actions">
+              <button disabled={!imageSize} onClick={copyExport}>Export calibration</button>
+              <label className="file-button compact">
+                <input accept="application/json,.json" type="file" onChange={(event) => importCalibration(event.target.files?.[0])} />
+                Import calibration
+              </label>
+              <button onClick={resetSavedCalibration}>Clear saved calibration</button>
+            </div>
           </section>
         </aside>
       </section>
