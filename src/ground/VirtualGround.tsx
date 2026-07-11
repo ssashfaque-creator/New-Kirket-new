@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   defaultShotInput,
   shotTypeDefaults,
@@ -13,6 +13,7 @@ import type { FieldPreset, FieldingPosition, GroundPreset } from "./virtualGroun
 type VirtualGroundProps = {
   ground: GroundPreset;
   field: FieldPreset;
+  detectedShot?: ShotInput;
   onGroundChange: (groundId: string) => void;
   onFieldChange: (fieldId: string) => void;
 };
@@ -26,6 +27,7 @@ const PITCH_WIDTH_M = 3.05;
 export function VirtualGround({
   ground,
   field,
+  detectedShot,
   onGroundChange,
   onFieldChange,
 }: VirtualGroundProps) {
@@ -35,6 +37,10 @@ export function VirtualGround({
   const areaM2 = Math.PI * ground.squareBoundaryM * ground.straightBoundaryM;
   const simulation = useMemo(() => simulateShot(shot, ground, field), [field, ground, shot]);
   const trajectoryPoints = simulation.trajectory.map(trajectoryPointToSvg).join(" ");
+
+  useEffect(() => {
+    if (detectedShot) setShot(detectedShot);
+  }, [detectedShot]);
 
   return (
     <section className="virtual-ground card">

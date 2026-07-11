@@ -61,6 +61,15 @@ system.
   - boundary result decisions for four/six and fielded/caught outcomes
   - trajectory, landing, boundary, and interception markers on the virtual
     ground
+- Provides an initial high-frame-rate shot detector for the yellow dimpled
+  practice ball:
+  - upload iPhone 16 Pro 4K/120 or 1080p/240 slow-motion video
+  - sample the actual dusty/worn ball color from a frame
+  - adaptive color + motion + circularity + temporal prediction tracking
+  - short-occlusion recovery, impact detection, and bounce detection
+  - calibrated direction/speed/launch estimates sent directly to the simulator
+  - 3D ball-size estimation when camera pose is reliable, with turf-homography
+    fallback and explicit confidence warnings
 
 ## Accuracy notes
 
@@ -94,6 +103,11 @@ Recommended workflow:
 8. Select a virtual ground and field preset to define the match environment.
 9. Use the shot simulator controls to test how a future detected shot would
    travel, interact with fielders, and produce a result.
+10. Upload a slow-motion video, sample the yellow ball, process the shot, and
+    send the measured parameters into the simulator.
+
+See [`docs/SHOT_DETECTION.md`](docs/SHOT_DETECTION.md) for the recommended
+iPhone 16 Pro capture protocol and detector limitations.
 
 ## Run locally
 

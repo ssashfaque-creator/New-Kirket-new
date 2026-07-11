@@ -102,6 +102,29 @@ export function buildTurfPitchOverlayLines(
   ].filter((line) => line.points.every(isFinitePoint));
 }
 
+export function imagePointToPitchInches(
+  point: Point2D,
+  landmarks: LandmarkMap,
+  turfPlane: TurfPlane | undefined,
+): Point2D | undefined {
+  const calibration = turfCalibrationBasis(landmarks, turfPlane);
+  if (!calibration || !turfPlane) return undefined;
+  const adjustedTurfPlane = applyManualBackEdge(turfPlane, landmarks);
+  const unit = imageToTurfUnit(point, adjustedTurfPlane);
+  const real = {
+    x: unitToXInches(unit.x),
+    y: unit.y * calibration.vScale,
+  };
+  const relative = {
+    x: real.x - calibration.originReal.x,
+    y: real.y - calibration.originReal.y,
+  };
+  return {
+    x: relative.x * calibration.right.x + relative.y * calibration.right.y,
+    y: relative.x * calibration.forward.x + relative.y * calibration.forward.y,
+  };
+}
+
 function turfImageLine(
   id: string,
   label: string,
@@ -171,6 +194,37 @@ function turfOverlayBasis(
       y: -batForward.x,
     },
   };
+}
+
+function turfCalibrationBasis(
+  landmarks: LandmarkMap,
+  turfPlane: TurfPlane | undefined,
+):
+  | {
+      originReal: Point2D;
+      forward: Point2D;
+      right: Point2D;
+      vScale: number;
+    }
+  | undefined {
+  const origin = landmarks.middleStumpBase;
+  const batTip = landmarks.batTip;
+  if (!origin || !batTip || !turfPlane) return undefined;
+  const adjustedTurfPlane = applyManualBackEdge(turfPlane, landmarks);
+  const originUnit = imageToTurfUnit(origin, adjustedTurfPlane);
+  const batUnit = imageToTurfUnit(batTip, adjustedTurfPlane);
+  const originPlane = { x: unitToXInches(originUnit.x), y: originUnit.y };
+  const batPlane = { x: unitToXInches(batUnit.x), y: batUnit.y };
+  const deltaX = clamp(batPlane.x - originPlane.x, -33.5 * 0.65, 33.5 * 0.65);
+  const deltaV = batPlane.y - originPlane.y;
+  if (!Number.isFinite(deltaV) || Math.abs(deltaV) < 0.0005) return undefined;
+  const deltaYInches = Math.sqrt(Math.max(33.5 * 33.5 - deltaX * deltaX, 33.5 * 33.5 * 0.35));
+  const vScale = (Math.sign(deltaV) || 1) * deltaYInches / deltaV;
+  if (!Number.isFinite(vScale) || Math.abs(vScale) < 1e-6) return undefined;
+  const originReal = { x: originPlane.x, y: originPlane.y * vScale };
+  const batForward = unitVector({ x: deltaX, y: deltaV * vScale });
+  const basis = turfOverlayBasis(landmarks, adjustedTurfPlane, vScale, batForward);
+  return { originReal, forward: basis.forward, right: basis.right, vScale };
 }
 
 export function projectWorldPoint(pose: PoseResult, point: Point3D): Point2D | undefined {

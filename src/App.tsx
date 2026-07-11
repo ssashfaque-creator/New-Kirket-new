@@ -12,8 +12,10 @@ import { calculateBatScale, formatNumber } from "./calibration/geometry";
 import { loadOpenCv, refineLandmarksSubPixel } from "./calibration/opencv";
 import { buildPitchOverlayLines, buildTurfPitchOverlayLines } from "./calibration/pitchOverlay";
 import { solveCalibration } from "./calibration/pose";
+import { ShotDetectionPanel } from "./detection/ShotDetectionPanel";
 import { VirtualGround } from "./ground/VirtualGround";
 import { FIELD_PRESETS, GROUND_PRESETS } from "./ground/virtualGround";
+import type { ShotInput } from "./ground/shotSimulation";
 import type {
   CalibrationResult,
   CandidateLine,
@@ -50,6 +52,7 @@ function App() {
   const [panningFrom, setPanningFrom] = useState<Point2D | undefined>();
   const [selectedGroundId, setSelectedGroundId] = useState(GROUND_PRESETS[3].id);
   const [selectedFieldId, setSelectedFieldId] = useState(FIELD_PRESETS[3].id);
+  const [detectedShot, setDetectedShot] = useState<ShotInput>();
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
@@ -557,9 +560,18 @@ function App() {
         </aside>
       </section>
 
+      <ShotDetectionPanel
+        landmarks={landmarks}
+        calibrationImageSize={imageSize}
+        turfPlane={detection?.turfPlane}
+        pose={result?.pose}
+        onShotDetected={setDetectedShot}
+      />
+
       <VirtualGround
         ground={selectedGround}
         field={selectedField}
+        detectedShot={detectedShot}
         onGroundChange={setSelectedGroundId}
         onFieldChange={setSelectedFieldId}
       />

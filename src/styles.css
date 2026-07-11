@@ -434,6 +434,169 @@ h2 {
   margin-top: 1rem;
 }
 
+.shot-detection {
+  margin-top: 1rem;
+}
+
+.video-detection-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.video-column {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+
+.video-column video,
+.detection-canvas-wrap {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+  background: #020617;
+}
+
+.video-column video {
+  display: block;
+  max-height: 420px;
+}
+
+.file-button.compact {
+  justify-self: start;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+
+.video-placeholder {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 18px;
+  color: #94a3b8;
+}
+
+.detection-canvas-wrap {
+  position: relative;
+  display: grid;
+  min-height: 300px;
+  place-items: center;
+}
+
+.detection-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  cursor: crosshair;
+}
+
+.detection-canvas-wrap > span {
+  position: absolute;
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.82);
+  pointer-events: none;
+}
+
+.detection-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.detection-controls label {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.detection-controls select,
+.detection-controls input[type="number"] {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  padding: 0.7rem;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.76);
+}
+
+.primary-action {
+  margin-top: 1rem;
+  border: 0;
+  color: #04111f;
+  background: linear-gradient(135deg, #fbbf24, #22c55e);
+  font-weight: 900;
+}
+
+.shot-detection progress {
+  width: 100%;
+  height: 0.7rem;
+  margin-top: 0.8rem;
+  accent-color: #22c55e;
+}
+
+.detection-result-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+
+.detection-result-grid div {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 0.7rem;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.detection-result-grid dt {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.detection-result-grid dd {
+  margin: 0.2rem 0 0;
+  color: #f8fafc;
+  font-weight: 900;
+}
+
+.measurement-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: center;
+  margin-top: 1rem;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 18px;
+  padding: 0.9rem;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.measurement-result strong {
+  color: #86efac;
+  font-size: 1.2rem;
+}
+
+.measurement-result span {
+  color: #e2e8f0;
+}
+
+.measurement-result small {
+  flex-basis: 100%;
+  color: #fde68a;
+}
+
 .ground-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -654,7 +817,13 @@ h2 {
 
   .ground-controls,
   .shot-controls,
+  .detection-controls,
+  .detection-result-grid,
   .ground-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .video-detection-grid {
     grid-template-columns: 1fr;
   }
 
