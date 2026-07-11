@@ -8,8 +8,10 @@ import {
   detectBallCandidates,
   profileFromRgb,
   sampleAverageColor,
+  detectBounceFrames,
   type BallColorProfile,
   type PixelPoint,
+  type TrackedBallPoint,
   type TrackingSummary,
 } from "./ballTracking";
 import { estimateShotMeasurement, type ShotMeasurement } from "./shotEstimation";
@@ -25,6 +27,12 @@ type ShotDetectionPanelProps = {
 
 const MAX_PROCESSING_SIDE = 960;
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+
+type ManualKeyframe = {
+  sourceTimeS: number;
+  center: PixelPoint;
+  radiusPx: number;
+};
 
 export function ShotDetectionPanel({
   landmarks,
@@ -50,6 +58,8 @@ export function ShotDetectionPanel({
   const [status, setStatus] = useState("Upload a 120/240 fps clip, then sample the ball.");
   const [tracking, setTracking] = useState<TrackingSummary>();
   const [measurement, setMeasurement] = useState<ShotMeasurement>();
+  const [capturedSourceTimeS, setCapturedSourceTimeS] = useState(0);
+  const [manualKeyframes, setManualKeyframes] = useState<ManualKeyframe[]>([]);
   const displayedFramePlan = buildVideoFramePlan(captureFps, timelineFps, clipDurationS);
 
   useEffect(() => () => {
@@ -83,6 +93,7 @@ export function ShotDetectionPanel({
     setSeedPoint(undefined);
     setTracking(undefined);
     setMeasurement(undefined);
+    setManualKeyframes([]);
     setStatus("Move the video to just before bat contact, then tap Grab frame.");
   }
 
@@ -106,6 +117,7 @@ export function ShotDetectionPanel({
     resizeCanvasForVideo(canvas, video);
     canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
     setClipStartS(video.currentTime);
+    setCapturedSourceTimeS(video.currentTime);
     setSeedPoint(undefined);
     setStatus("Tap the yellow ball in the captured frame to learn its current color.");
   }
@@ -124,8 +136,12 @@ export function ShotDetectionPanel({
     const color = sampleAverageColor(frame, point, seedRadiusPx);
     setProfile(profileFromRgb(color, profile.hueToleranceDegrees));
     setSeedPoint(point);
+    setManualKeyframes((current) => [
+      ...current.filter((item) => Math.abs(item.sourceTimeS - capturedSourceTimeS) > 0.0005),
+      { sourceTimeS: capturedSourceTimeS, center: point, radiusPx: seedRadiusPx },
+    ].sort((a, b) => a.sourceTimeS - b.sourceTimeS));
     drawSampleMarker(canvas, point, seedRadiusPx);
-    setStatus("Ball sampled. Start processing; increase tolerance if the worn ball is lost.");
+    setStatus("Ball sampled and manual keyframe saved. Seek/grab/tap more frames or run automatic processing.");
   }
 
   async function processClip() {
@@ -203,13 +219,76 @@ export function ShotDetectionPanel({
           )} km/h, ${Math.round(nextMeasurement.directionDegrees)} deg direction.`,
         );
       } else {
-        setStatus("Track found, but calibration/track quality was insufficient for shot measurement.");
+        setStatus(trackFailureMessage(summary, Boolean(turfPlane), Boolean(pose)));
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Video processing failed.");
     } finally {
       setProcessing(false);
       abortRef.current = false;
+    }
+  }
+
+  function measureManualKeyframes() {
+    if (manualKeyframes.length < 4 || !canvasRef.current) {
+      setStatus("Add at least four manual keyframes starting at bat contact.");
+      return;
+    }
+    const firstSourceTime = manualKeyframes[0].sourceTimeS;
+    const points: TrackedBallPoint[] = manualKeyframes.map((keyframe, index) => {
+      const physicalTimeS =
+        ((keyframe.sourceTimeS - firstSourceTime) * timelineFps) / Math.max(captureFps, 1);
+      const previous = manualKeyframes[Math.max(0, index - 1)];
+      const previousPhysicalTimeS =
+        ((previous.sourceTimeS - firstSourceTime) * timelineFps) / Math.max(captureFps, 1);
+      const dt = Math.max(physicalTimeS - previousPhysicalTimeS, 1 / captureFps);
+      return {
+        frameIndex: Math.round(physicalTimeS * captureFps),
+        timeS: physicalTimeS,
+        center: keyframe.center,
+        radiusPx: keyframe.radiusPx,
+        confidence: 0.98,
+        predicted: false,
+        velocityPxPerS:
+          index === 0
+            ? { x: 0, y: 0 }
+            : {
+                x: (keyframe.center.x - previous.center.x) / dt,
+                y: (keyframe.center.y - previous.center.y) / dt,
+              },
+      };
+    });
+    if (points.length >= 2) points[0].velocityPxPerS = points[1].velocityPxPerS;
+    const summary: TrackingSummary = {
+      points,
+      detectedPoints: points.length,
+      predictedPoints: 0,
+      averageConfidence: 0.98,
+      impactFrameIndex: points[0].frameIndex,
+      bounceFrameIndices: detectBounceFrames(points),
+      pixelDirectionDegrees: undefined,
+      pixelSpeedPerSecond: undefined,
+      longestPredictedGap: 0,
+    };
+    const nextMeasurement = estimateShotMeasurement(summary, {
+      ballDiameterMm,
+      captureFps,
+      pose,
+      turfPlane,
+      landmarks,
+      trackedFrameSize: {
+        width: canvasRef.current.width,
+        height: canvasRef.current.height,
+      },
+      calibrationImageSize,
+    });
+    setTracking(summary);
+    setMeasurement(nextMeasurement);
+    if (nextMeasurement) {
+      onShotDetected(nextMeasurement.shotInput);
+      setStatus(`Manual track measured at ${Math.round(nextMeasurement.speedMps * 3.6)} km/h.`);
+    } else {
+      setStatus("Manual keyframes were saved, but calibration geometry is insufficient for measurement.");
     }
   }
 
@@ -300,6 +379,30 @@ export function ShotDetectionPanel({
           <span>{seedRadiusPx}px</span>
           <input min="4" max="24" step="1" type="range" value={seedRadiusPx} onChange={(event) => setSeedRadiusPx(Number(event.target.value))} />
         </label>
+      </div>
+
+      <div className="manual-track-panel">
+        <div>
+          <strong>Manual keyframe fallback: {manualKeyframes.length} points</strong>
+          <p>
+            If auto-tracking is wrong, seek to bat contact, Grab frame, tap the ball, then repeat
+            for at least three later frames. Start with the contact frame.
+          </p>
+        </div>
+        <div className="manual-track-actions">
+          <button disabled={manualKeyframes.length < 4 || processing} onClick={measureManualKeyframes}>
+            Measure manual track
+          </button>
+          <button
+            disabled={!manualKeyframes.length || processing}
+            onClick={() => {
+              setManualKeyframes([]);
+              setStatus("Manual keyframes cleared.");
+            }}
+          >
+            Clear keyframes
+          </button>
+        </div>
       </div>
 
       <button className="primary-action" disabled={!seedPoint || processing} onClick={processClip}>
@@ -403,4 +506,24 @@ function seekVideo(video: HTMLVideoElement, timeS: number): Promise<void> {
 
 function yieldToBrowser() {
   return new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+}
+
+function trackFailureMessage(
+  summary: TrackingSummary,
+  hasTurfPlane: boolean,
+  hasPose: boolean,
+): string {
+  if (summary.detectedPoints < 4) {
+    return `Only ${summary.detectedPoints} ball frames were detected. Increase light/tolerance or use manual keyframes.`;
+  }
+  if (summary.longestPredictedGap > 4) {
+    return `The ball disappeared for ${summary.longestPredictedGap} frames. Use manual keyframes across the occlusion.`;
+  }
+  if (!hasTurfPlane && !hasPose) {
+    return "The ball track exists, but calibration has neither a valid turf plane nor 3D pose.";
+  }
+  if (summary.impactFrameIndex === undefined) {
+    return "Bat impact was not resolved. Shorten the clip around contact or start manual keyframes at impact.";
+  }
+  return "Track quality or calibration scale was insufficient. Review warnings and use manual keyframes.";
 }

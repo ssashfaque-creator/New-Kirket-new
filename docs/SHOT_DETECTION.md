@@ -45,6 +45,20 @@ so browser live capture is a lower-accuracy fallback.
 9. Inspect detected frames, predicted gaps, track confidence, impact, bounces,
    and measurement warnings.
 
+### Manual keyframe fallback
+
+If automatic tracking is wrong:
+
+1. Seek to the exact bat-contact frame.
+2. Tap **Grab current frame**, then tap the ball.
+3. Seek forward several source frames and repeat.
+4. Add at least four points, beginning at contact.
+5. Tap **Measure manual track**.
+
+Manual points bypass color/occlusion association but still use the calibrated
+camera pose or turf homography. They are the preferred fallback for difficult
+clips until enough real footage exists to retrain/tune automatic detection.
+
 ## Detection pipeline
 
 The detector combines:

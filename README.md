@@ -16,6 +16,8 @@ system.
   - optional crease reference points
 - Provides zoom, pan, and upload/camera input so markers can be adjusted
   accurately on phone photos.
+- Provides an expanded 0–75% off-frame calibration workspace so inferred turf
+  corners and perspective lines can be placed outside the captured image.
 - Uses OpenCV.js in the browser to detect candidate lines and refine landmark
   clicks to nearby high-contrast corners.
 - Includes a setup-specific auto-detect pass for the supplied net photos:
@@ -70,6 +72,9 @@ system.
   - calibrated direction/speed/launch estimates sent directly to the simulator
   - 3D ball-size estimation when camera pose is reliable, with turf-homography
     fallback and explicit confidence warnings
+  - manual frame-by-frame ball keyframes when automatic tracking is unreliable
+  - actionable failure diagnostics for missing frames, occlusion, impact, and
+    calibration problems
 - Adds reliability and continuity features:
   - automatic on-device calibration session persistence
   - JSON calibration import/export and recovery

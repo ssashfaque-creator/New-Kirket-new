@@ -48,6 +48,7 @@ const SUBPIXEL_REFINABLE_LANDMARKS: LandmarkId[] = [
 function App() {
   const restoredSession = useRef(loadSession()).current;
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const calibrationSvgRef = useRef<SVGSVGElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrl, setImageUrl] = useState<string>();
@@ -85,6 +86,7 @@ function App() {
   const [activeStage, setActiveStage] = useState<"calibrate" | "detect" | "simulate">("calibrate");
   const [busyAction, setBusyAction] = useState<string>();
   const [dragMode, setDragMode] = useState(false);
+  const [workspaceMargin, setWorkspaceMargin] = useState(0.3);
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = availablePoseLandmarks(landmarks).length;
@@ -102,6 +104,27 @@ function App() {
     () => validateCalibrationReadiness(landmarks, imageSize, detection?.turfPlane, result),
     [detection?.turfPlane, imageSize, landmarks, result],
   );
+  const calibrationViewport = useMemo(() => {
+    if (!imageSize) return undefined;
+    const marginX = imageSize.width * workspaceMargin;
+    const marginY = imageSize.height * workspaceMargin;
+    const baseWidth = imageSize.width + marginX * 2;
+    const baseHeight = imageSize.height + marginY * 2;
+    const width = baseWidth / zoom;
+    const height = baseHeight / zoom;
+    return {
+      bounds: {
+        minX: -marginX,
+        minY: -marginY,
+        maxX: imageSize.width + marginX,
+        maxY: imageSize.height + marginY,
+      },
+      x: -marginX + (baseWidth - width) / 2 + pan.x,
+      y: -marginY + (baseHeight - height) / 2 + pan.y,
+      width,
+      height,
+    };
+  }, [imageSize, pan.x, pan.y, workspaceMargin, zoom]);
 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -166,27 +189,23 @@ function App() {
   }
 
   function imagePointFromClient(clientX: number, clientY: number): Point2D | undefined {
-    const image = imageRef.current;
-    if (!image || !imageSize) return undefined;
-    const rect = image.getBoundingClientRect();
-    const normalizedX = ((clientX - rect.left) / rect.width - 0.5 - pan.x) / zoom + 0.5;
-    const normalizedY = ((clientY - rect.top) / rect.height - 0.5 - pan.y) / zoom + 0.5;
-    return {
-      x: normalizedX * imageSize.width,
-      y: normalizedY * imageSize.height,
-    };
+    const svg = calibrationSvgRef.current;
+    const matrix = svg?.getScreenCTM();
+    if (!svg || !matrix) return undefined;
+    const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
+    return { x: point.x, y: point.y };
   }
 
   function handleOverlayPointerMove(event: React.PointerEvent<SVGSVGElement>) {
     if (panningFrom) {
-      const image = imageRef.current;
-      if (!image) return;
-      const rect = image.getBoundingClientRect();
-      const dx = (event.clientX - panningFrom.x) / rect.width;
-      const dy = (event.clientY - panningFrom.y) / rect.height;
+      const svg = calibrationSvgRef.current;
+      if (!svg || !calibrationViewport) return;
+      const rect = svg.getBoundingClientRect();
+      const dx = ((event.clientX - panningFrom.x) / rect.width) * calibrationViewport.width;
+      const dy = ((event.clientY - panningFrom.y) / rect.height) * calibrationViewport.height;
       setPan((current) => ({
-        x: current.x + dx,
-        y: current.y + dy,
+        x: current.x - dx,
+        y: current.y - dy,
       }));
       setPanningFrom({ x: event.clientX, y: event.clientY });
       return;
@@ -358,10 +377,10 @@ function App() {
 
   function nudgeSelectedLandmark(deltaX: number, deltaY: number) {
     const point = landmarks[selectedLandmark];
-    if (!point || !imageSize) return;
+    if (!point || !calibrationViewport) return;
     updateLandmark(selectedLandmark, {
-      x: Math.min(Math.max(point.x + deltaX, 0), imageSize.width),
-      y: Math.min(Math.max(point.y + deltaY, 0), imageSize.height),
+      x: Math.min(Math.max(point.x + deltaX, calibrationViewport.bounds.minX), calibrationViewport.bounds.maxX),
+      y: Math.min(Math.max(point.y + deltaY, calibrationViewport.bounds.minY), calibrationViewport.bounds.maxY),
     });
   }
 
@@ -481,6 +500,22 @@ function App() {
             >
               Reset view
             </button>
+            <label className="workspace-margin-control">
+              Off-frame space
+              <select
+                value={workspaceMargin}
+                onChange={(event) => {
+                  setWorkspaceMargin(Number(event.target.value));
+                  setPan({ x: 0, y: 0 });
+                }}
+              >
+                <option value="0">None</option>
+                <option value="0.15">15%</option>
+                <option value="0.3">30%</option>
+                <option value="0.5">50%</option>
+                <option value="0.75">75%</option>
+              </select>
+            </label>
           </div>
 
           <div className="image-stage">
@@ -491,22 +526,41 @@ function App() {
                   src={imageUrl}
                   alt="Cricket setup"
                   onLoad={handleImageLoaded}
-                  style={{
-                    transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
-                  }}
+                  className="processing-source-image"
                 />
-                {imageSize && (
+                {imageSize && calibrationViewport && (
                   <svg
+                    ref={calibrationSvgRef}
                     className="overlay"
-                    viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-                    style={{
-                      transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
-                    }}
+                    viewBox={`${calibrationViewport.x} ${calibrationViewport.y} ${calibrationViewport.width} ${calibrationViewport.height}`}
+                    preserveAspectRatio="xMidYMid meet"
                     onPointerDown={handleOverlayPointerDown}
                     onPointerMove={handleOverlayPointerMove}
                     onPointerUp={stopDragging}
                     onPointerCancel={stopDragging}
                   >
+                    <rect
+                      x={calibrationViewport.bounds.minX}
+                      y={calibrationViewport.bounds.minY}
+                      width={calibrationViewport.bounds.maxX - calibrationViewport.bounds.minX}
+                      height={calibrationViewport.bounds.maxY - calibrationViewport.bounds.minY}
+                      className="calibration-workspace-background"
+                    />
+                    <image
+                      href={imageUrl}
+                      x="0"
+                      y="0"
+                      width={imageSize.width}
+                      height={imageSize.height}
+                      preserveAspectRatio="none"
+                    />
+                    <rect
+                      x="0"
+                      y="0"
+                      width={imageSize.width}
+                      height={imageSize.height}
+                      className="image-frame-outline"
+                    />
                     {showCandidates &&
                       candidateLines.map((line) => (
                         <line
@@ -821,10 +875,7 @@ function App() {
         calibrationImageSize={imageSize}
         turfPlane={detection?.turfPlane}
         pose={result?.pose}
-        onShotDetected={(shot) => {
-          setDetectedShot(shot);
-          setActiveStage("simulate");
-        }}
+        onShotDetected={setDetectedShot}
       />
       ) : null}
 
