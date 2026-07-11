@@ -37,6 +37,9 @@ export function solveCalibration(
       if (pose.maxReprojectionErrorPx > 8) {
         warnings.push("High reprojection error: re-check point placement and camera FOV.");
       }
+      if (pose.warning) {
+        warnings.push(pose.warning);
+      }
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : "Pose solve failed.");
     }
@@ -103,9 +106,13 @@ export function solvePhonePose(
     tvec: [pose.tvec.data64F[0], pose.tvec.data64F[1], pose.tvec.data64F[2]],
     cameraPositionWorldInches: cameraPosition,
     distanceToMiddleStumpInches: Math.hypot(cameraPosition.x, cameraPosition.y),
-    cameraHeightInches: cameraPosition.z,
+    cameraHeightInches: Math.abs(cameraPosition.z),
     reprojectionErrorPx: mean(pose.errors),
     maxReprojectionErrorPx: Math.max(...pose.errors),
+    warning:
+      cameraPosition.z < 0
+        ? "PnP returned a mirrored vertical axis; camera height is shown as a magnitude."
+        : undefined,
   };
 
   cleanup(objectPoints, imagePoints, cameraMatrix, distCoeffs, pose.rvec, pose.tvec, pose.projected, rotationMatrix);
