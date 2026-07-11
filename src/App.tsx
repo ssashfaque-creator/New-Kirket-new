@@ -42,6 +42,10 @@ function App() {
   const [status, setStatus] = useState("Load a camera photo to begin.");
   const [assumedFov, setAssumedFov] = useState(DEFAULT_CAMERA_FOV_DEGREES);
   const [showCandidates, setShowCandidates] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [isPanMode, setIsPanMode] = useState(false);
+  const [pan, setPan] = useState<Point2D>({ x: 0, y: 0 });
+  const [panningFrom, setPanningFrom] = useState<Point2D | undefined>();
 
   const scale = useMemo(() => calculateBatScale(landmarks), [landmarks]);
   const markedPosePoints = LANDMARK_ORDER.filter((id) => landmarks[id]).length;
@@ -64,6 +68,8 @@ function App() {
     setCandidateLines([]);
     setDetection(undefined);
     setResult(undefined);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
     setStatus("Image loaded. Confirm the landmark handles before solving.");
   }
 
@@ -83,7 +89,6 @@ function App() {
       ...current,
       [id]: point,
     }));
-    setDetection(undefined);
     setResult(undefined);
   }
 
@@ -91,13 +96,29 @@ function App() {
     const image = imageRef.current;
     if (!image || !imageSize) return undefined;
     const rect = image.getBoundingClientRect();
+    const normalizedX = ((clientX - rect.left) / rect.width - 0.5 - pan.x) / zoom + 0.5;
+    const normalizedY = ((clientY - rect.top) / rect.height - 0.5 - pan.y) / zoom + 0.5;
     return {
-      x: ((clientX - rect.left) / rect.width) * imageSize.width,
-      y: ((clientY - rect.top) / rect.height) * imageSize.height,
+      x: normalizedX * imageSize.width,
+      y: normalizedY * imageSize.height,
     };
   }
 
   function handleOverlayPointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (panningFrom) {
+      const image = imageRef.current;
+      if (!image) return;
+      const rect = image.getBoundingClientRect();
+      const dx = (event.clientX - panningFrom.x) / rect.width;
+      const dy = (event.clientY - panningFrom.y) / rect.height;
+      setPan((current) => ({
+        x: current.x + dx,
+        y: current.y + dy,
+      }));
+      setPanningFrom({ x: event.clientX, y: event.clientY });
+      return;
+    }
+
     if (!draggingLandmark) return;
     const point = imagePointFromClient(event.clientX, event.clientY);
     if (!point) return;
@@ -105,6 +126,12 @@ function App() {
   }
 
   function handleOverlayPointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (isPanMode) {
+      setPanningFrom({ x: event.clientX, y: event.clientY });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const point = imagePointFromClient(event.clientX, event.clientY);
     if (!point) return;
     updateLandmark(selectedLandmark, point);
@@ -124,6 +151,7 @@ function App() {
 
   function stopDragging() {
     setDraggingLandmark(undefined);
+    setPanningFrom(undefined);
   }
 
   async function runDetectSetup() {
@@ -225,16 +253,49 @@ function App() {
             <button disabled={!imageUrl} className="primary" onClick={runCalibrationSolve}>
               Run calibration
             </button>
+            <button disabled={!imageUrl} onClick={() => setZoom((value) => Math.min(6, value * 1.35))}>
+              Zoom in
+            </button>
+            <button disabled={!imageUrl} onClick={() => setZoom((value) => Math.max(1, value / 1.35))}>
+              Zoom out
+            </button>
+            <button
+              disabled={!imageUrl}
+              className={isPanMode ? "active-toggle" : ""}
+              onClick={() => setIsPanMode((value) => !value)}
+            >
+              {isPanMode ? "Pan on" : "Pan off"}
+            </button>
+            <button
+              disabled={!imageUrl}
+              onClick={() => {
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+            >
+              Reset view
+            </button>
           </div>
 
           <div className="image-stage">
             {imageUrl ? (
               <>
-                <img ref={imageRef} src={imageUrl} alt="Cricket setup" onLoad={handleImageLoaded} />
+                <img
+                  ref={imageRef}
+                  src={imageUrl}
+                  alt="Cricket setup"
+                  onLoad={handleImageLoaded}
+                  style={{
+                    transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
+                  }}
+                />
                 {imageSize && (
                   <svg
                     className="overlay"
                     viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+                    style={{
+                      transform: `translate(${pan.x * 100}%, ${pan.y * 100}%) scale(${zoom})`,
+                    }}
                     onPointerDown={handleOverlayPointerDown}
                     onPointerMove={handleOverlayPointerMove}
                     onPointerUp={stopDragging}
@@ -273,13 +334,22 @@ function App() {
                     })}
 
                     {landmarks.middleStumpBase && landmarks.batTip && (
-                      <line
-                        className="measurement-line"
-                        x1={landmarks.middleStumpBase.x}
-                        y1={landmarks.middleStumpBase.y}
-                        x2={landmarks.batTip.x}
-                        y2={landmarks.batTip.y}
-                      />
+                      <>
+                        <line
+                          className="measurement-line"
+                          x1={landmarks.middleStumpBase.x}
+                          y1={landmarks.middleStumpBase.y}
+                          x2={landmarks.batTip.x}
+                          y2={landmarks.batTip.y}
+                        />
+                        <text
+                          className="measurement-label"
+                          x={(landmarks.middleStumpBase.x + landmarks.batTip.x) / 2 + 10}
+                          y={(landmarks.middleStumpBase.y + landmarks.batTip.y) / 2 - 10}
+                        >
+                          bat 33.5 in
+                        </text>
+                      </>
                     )}
 
                     {LANDMARK_ORDER.map((id) => {
@@ -319,8 +389,10 @@ function App() {
             <h2>Calibration checklist</h2>
             <ol className="steps">
               <li>Tap <strong>Auto-detect setup</strong> to get stump/bat suggestions.</li>
-              <li>Manually drag every handle onto the exact visible point.</li>
+              <li>Turn on <strong>Pan</strong> and use zoom controls for precise placement.</li>
+              <li>Correct all stump bases/tops, especially the middle stump base.</li>
               <li>Bat end touches the middle stump base.</li>
+              <li>Correct <strong>turfBackLeft</strong>/<strong>turfBackRight</strong> on the back 13 ft turf edge behind the wicket.</li>
               <li>Bat lies flat and points along the pitch center line.</li>
               <li>Drag creaseLeft/creaseRight onto the crease direction if overlay angle looks off.</li>
               <li>Mark bases and tops of visible stumps as precisely as possible.</li>

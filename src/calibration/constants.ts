@@ -20,6 +20,8 @@ export const LANDMARK_ORDER = [
   "legStumpBase",
   "legStumpTop",
   "batTip",
+  "turfBackLeft",
+  "turfBackRight",
   "creaseLeft",
   "creaseRight",
 ] as const;
@@ -32,6 +34,8 @@ export const LANDMARK_LABELS: Record<(typeof LANDMARK_ORDER)[number], string> = 
   legStumpBase: "Leg stump base",
   legStumpTop: "Leg stump top",
   batTip: "Far end of 33.5 in bat",
+  turfBackLeft: "Back turf edge left (13 ft)",
+  turfBackRight: "Back turf edge right (13 ft)",
   creaseLeft: "Left point on popping crease",
   creaseRight: "Right point on popping crease",
 };

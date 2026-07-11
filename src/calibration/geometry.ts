@@ -15,7 +15,7 @@ import type {
   Point3D,
 } from "./types";
 
-export const WORLD_POINTS: Record<LandmarkId, Point3D> = {
+export const WORLD_POINTS: Partial<Record<LandmarkId, Point3D>> = {
   middleStumpBase: { x: 0, y: 0, z: 0 },
   middleStumpTop: { x: 0, y: 0, z: STUMP_HEIGHT_INCHES },
   offStumpBase: { x: -WICKET_WIDTH_INCHES / 2, y: 0, z: 0 },
@@ -87,7 +87,7 @@ export function estimateIntrinsics(
 }
 
 export function availablePoseLandmarks(landmarks: LandmarkMap): LandmarkId[] {
-  return (Object.keys(WORLD_POINTS) as LandmarkId[]).filter((id) => Boolean(landmarks[id]));
+  return (Object.keys(WORLD_POINTS) as LandmarkId[]).filter((id) => Boolean(landmarks[id] && WORLD_POINTS[id]));
 }
 
 export function buildObjectImagePairs(landmarks: LandmarkMap): Array<{
@@ -98,7 +98,7 @@ export function buildObjectImagePairs(landmarks: LandmarkMap): Array<{
   return availablePoseLandmarks(landmarks).map((id) => ({
     id,
     image: landmarks[id]!,
-    world: WORLD_POINTS[id],
+    world: WORLD_POINTS[id]!,
   }));
 }
 

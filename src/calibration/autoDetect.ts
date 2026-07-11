@@ -59,6 +59,8 @@ export function defaultLandmarks(size: ImageSize): LandmarkMap {
     legStumpBase: { x: centerX + stumpSpread, y: baseY },
     legStumpTop: { x: centerX + stumpSpread, y: baseY - stumpHeight },
     batTip: { x: centerX, y: Math.min(size.height * 0.92, baseY + size.height * 0.23) },
+    turfBackLeft: { x: centerX - size.width * 0.25, y: baseY - size.height * 0.04 },
+    turfBackRight: { x: centerX + size.width * 0.25, y: baseY - size.height * 0.04 },
     creaseLeft: { x: centerX - size.width * 0.12, y: baseY + size.height * 0.1 },
     creaseRight: { x: centerX + size.width * 0.12, y: baseY + size.height * 0.1 },
   };
@@ -121,6 +123,11 @@ export function detectSetupLandmarks(image: HTMLImageElement): SetupDetectionRes
   const candidateLines: CandidateLine[] = [];
 
   if (fallbackStumps.length >= 1) {
+    if (turfPlane) {
+      landmarks.turfBackLeft = scalePoint(turfPlane.leftEdge.far, scaled.scale);
+      landmarks.turfBackRight = scalePoint(turfPlane.rightEdge.far, scaled.scale);
+    }
+
     const [left, middle, right] = normalizeThreeStumps(fallbackStumps);
     landmarks.offStumpBase = scalePoint({ x: left.x, y: left.baseY }, scaled.scale);
     landmarks.offStumpTop = scalePoint({ x: left.x, y: left.topY }, scaled.scale);

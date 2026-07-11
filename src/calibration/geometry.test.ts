@@ -22,8 +22,8 @@ describe("calibration geometry", () => {
   it("centers the world coordinate system on the middle stump base", () => {
     expect(WORLD_POINTS.middleStumpBase).toEqual({ x: 0, y: 0, z: 0 });
     expect(WORLD_POINTS.batTip).toEqual({ x: 0, y: BAT_LENGTH_INCHES, z: 0 });
-    expect(WORLD_POINTS.offStumpBase.x).toBeLessThan(0);
-    expect(WORLD_POINTS.legStumpBase.x).toBeGreaterThan(0);
+    expect(WORLD_POINTS.offStumpBase?.x).toBeLessThan(0);
+    expect(WORLD_POINTS.legStumpBase?.x).toBeGreaterThan(0);
   });
 
   it("estimates a symmetric phone camera matrix from image dimensions and FOV", () => {

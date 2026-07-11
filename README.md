@@ -12,7 +12,10 @@ system.
   - middle stump top
   - off and leg stump bases/tops
   - far end of the 33.5 inch calibration bat
+  - left/right ends of the 13 ft back turf edge behind the wicket
   - optional crease reference points
+- Provides zoom, pan, and upload/camera input so markers can be adjusted
+  accurately on phone photos.
 - Uses OpenCV.js in the browser to detect candidate lines and refine landmark
   clicks to nearby high-contrast corners.
 - Includes a setup-specific auto-detect pass for the supplied net photos:
@@ -38,6 +41,8 @@ system.
 - The overlay angle can be corrected manually: dragging `creaseLeft` and
   `creaseRight` now defines the crease direction, while the app still uses the
   turf homography and known dimensions for scale/perspective.
+- The turf perspective can be corrected manually: dragging `turfBackLeft` and
+  `turfBackRight` defines the 13 ft back edge behind the wicket.
 - Reports average and maximum reprojection error so inaccurate calibrations are
   visible immediately.
 - Exports calibration JSON for future game-simulation steps.
@@ -61,6 +66,16 @@ combines:
 For best results, keep the bat flat on the pitch with one end touching the
 middle stump and aligned down the pitch center line. Recalibrate if the phone
 moves.
+
+Recommended workflow:
+
+1. Load/capture a setup photo.
+2. Tap **Auto-detect setup**.
+3. Zoom in and use **Pan on** while positioning markers.
+4. Correct stump tops/bases and the bat tip.
+5. Correct `turfBackLeft` / `turfBackRight` on the back 13 ft turf edge.
+6. Correct `creaseLeft` / `creaseRight` if the overlay angle needs adjustment.
+7. Run calibration and inspect the dimension labels.
 
 ## Run locally
 

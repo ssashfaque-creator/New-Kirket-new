@@ -49,9 +49,10 @@ export function buildTurfPitchOverlayLines(
   const origin = landmarks.middleStumpBase;
   const batTip = landmarks.batTip;
   if (!origin || !batTip || !turfPlane) return [];
+  const adjustedTurfPlane = applyManualBackEdge(turfPlane, landmarks);
 
-  const originUnit = imageToTurfUnit(origin, turfPlane);
-  const batUnit = imageToTurfUnit(batTip, turfPlane);
+  const originUnit = imageToTurfUnit(origin, adjustedTurfPlane);
+  const batUnit = imageToTurfUnit(batTip, adjustedTurfPlane);
   const originPlane = {
     x: unitToXInches(originUnit.x),
     y: originUnit.y,
@@ -76,7 +77,7 @@ export function buildTurfPitchOverlayLines(
     x: deltaX,
     y: deltaV * vScale,
   });
-  const basis = turfOverlayBasis(landmarks, turfPlane, vScale, batForward);
+  const basis = turfOverlayBasis(landmarks, adjustedTurfPlane, vScale, batForward);
   const forward = basis.forward;
   const right = basis.right;
   const pointFor = (xInches: number, yInches: number) => {
@@ -84,20 +85,51 @@ export function buildTurfPitchOverlayLines(
       x: originReal.x + right.x * xInches + forward.x * yInches,
       y: originReal.y + right.y * xInches + forward.y * yInches,
     };
-    return turfPointAt(turfPlane, planePoint.y / vScale, planePoint.x);
+    return turfPointAt(adjustedTurfPlane, planePoint.y / vScale, planePoint.x);
   };
 
   return [
-    turfWorldLine("pitch-left-edge", "pitch edge", "pitch", -PITCH_HALF_WIDTH_INCHES, 0, -PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
-    turfWorldLine("pitch-right-edge", "pitch edge", "pitch", PITCH_HALF_WIDTH_INCHES, 0, PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
-    turfWorldLine("pitch-center", "pitch centre", "center", 0, 0, 0, CRICKET_PITCH_LENGTH_INCHES, pointFor),
-    turfWorldLine("bowling-crease-near", "bowling crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, 0, pointFor),
-    turfWorldLine("popping-crease-near", "popping crease", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, pointFor),
-    turfWorldLine("return-crease-left", "return crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, -BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
-    turfWorldLine("return-crease-right", "return crease", "crease", BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
+    turfImageLine("turf-back-edge", "back turf edge 13 ft", "crease", adjustedTurfPlane.leftEdge.far, adjustedTurfPlane.rightEdge.far),
+    turfWorldLine("pitch-left-edge", "pitch edge 66 ft", "pitch", -PITCH_HALF_WIDTH_INCHES, 0, -PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("pitch-right-edge", "pitch edge 66 ft", "pitch", PITCH_HALF_WIDTH_INCHES, 0, PITCH_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("pitch-center", "pitch centre 66 ft", "center", 0, 0, 0, CRICKET_PITCH_LENGTH_INCHES, pointFor),
+    turfWorldLine("bowling-crease-near", "bowling crease 8 ft 8 in", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, 0, pointFor),
+    turfWorldLine("popping-crease-near", "popping crease 12 ft", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, POPPING_CREASE_DISTANCE_INCHES, pointFor),
+    turfWorldLine("return-crease-left", "return crease 8 ft+", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, 0, -BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
+    turfWorldLine("return-crease-right", "return crease 8 ft+", "crease", BOWLING_CREASE_HALF_WIDTH_INCHES, 0, BOWLING_CREASE_HALF_WIDTH_INCHES, RETURN_CREASE_FORWARD_INCHES, pointFor),
     turfWorldLine("bowling-crease-far", "far bowling crease", "crease", -BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, BOWLING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES, pointFor),
     turfWorldLine("popping-crease-far", "far popping crease", "crease", -POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, POPPING_CREASE_HALF_WIDTH_INCHES, CRICKET_PITCH_LENGTH_INCHES - POPPING_CREASE_DISTANCE_INCHES, pointFor),
   ].filter((line) => line.points.every(isFinitePoint));
+}
+
+function turfImageLine(
+  id: string,
+  label: string,
+  kind: PitchOverlayLine["kind"],
+  from: Point2D,
+  to: Point2D,
+): PitchOverlayLine {
+  return { id, label, kind, points: [from, to] };
+}
+
+function applyManualBackEdge(turfPlane: TurfPlane, landmarks: LandmarkMap): TurfPlane {
+  const backLeft = landmarks.turfBackLeft;
+  const backRight = landmarks.turfBackRight;
+  if (!backLeft || !backRight) return turfPlane;
+
+  const [leftFar, rightFar] = backLeft.x <= backRight.x ? [backLeft, backRight] : [backRight, backLeft];
+  return {
+    ...turfPlane,
+    polygon: [leftFar, rightFar, turfPlane.rightEdge.near, turfPlane.leftEdge.near],
+    leftEdge: {
+      ...turfPlane.leftEdge,
+      far: leftFar,
+    },
+    rightEdge: {
+      ...turfPlane.rightEdge,
+      far: rightFar,
+    },
+  };
 }
 
 function turfOverlayBasis(
