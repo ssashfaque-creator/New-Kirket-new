@@ -15,30 +15,19 @@ struct MetricTargetObservation: Sendable {
 /// The 3×3 A4 board is a visibility/assembly aid; only sheet C2's QR is measured.
 enum MetricCalibrationProtocol {
     static let payload = "KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM"
-    /// Outer printed QR square, including quiet zone (meters).
+    /// Side length Vision returns for the QR *symbol* (modules only), in meters.
+    /// Quiet zone is printed outside this square and must not be included here.
     static let targetSideMeters = 0.160
     /// Sheet ID that carries the QR on the 3×3 board (front-middle, camera side).
     static let qrSheetId = "C2"
     /// Vertical offset from QR bottom edge to middle stump. Must stay 0:
-    /// ground y=0 is the QR bottom edge at the stump.
+    /// ground y=0 is the QR module bottom edge at the stump.
     static let stumpEdgeOffsetMeters = 0.0
-
-    static let printSteps: [String] = [
-        "Print the 3×3 A4 board (docs/calibration-board-3x3) at 100% / Actual Size.",
-        "Verify the 160 mm control ruler on sheet C2 with a physical ruler.",
-        "Assemble with 15 mm overlap using the dashed attach marks (sheets stick on top).",
-    ]
-
-    static let placeSteps: [String] = [
-        "Place the board so C2 is front-middle, facing the camera, not blocked by the stumps.",
-        "Middle stump touches the red bottom edge of the 160 mm QR on C2 (not a lower page mark).",
-        "Arrow on C2 points down the pitch. Keep the complete QR visible.",
-    ]
-
-    static let afterAcceptSteps: [String] = [
-        "Accept calibration only when RMS ≤ 2.5 px after 15 stable frames.",
-        "Remove all nine sheets without moving the phone, then capture.",
-    ]
+    /// Accept calibration only when temporal corner RMS is at or below this (pixels).
+    static let maxTemporalCornerRMSPixels = 2.5
+    /// Reject quads that are too skewed to be a near-frontal planar square.
+    static let minCornerAngleDegrees = 55.0
+    static let maxCornerAngleDegrees = 125.0
 
     static var inAppProtocolLines: [String] {
         [
@@ -47,6 +36,17 @@ enum MetricCalibrationProtocol {
             "3. Middle stump touches the red bottom edge of the 160 mm QR. Arrow down the pitch.",
             "4. Hold still for 15 stable frames. Accept only if RMS ≤ 2.5 px.",
             "5. Remove all nine sheets. Do not move the phone after calibration.",
+        ]
+    }
+
+    static func groundCornersMeters() -> [CGPoint] {
+        let half = targetSideMeters / 2
+        let stumpY = stumpEdgeOffsetMeters
+        return [
+            CGPoint(x: -half, y: stumpY),
+            CGPoint(x: half, y: stumpY),
+            CGPoint(x: half, y: stumpY + targetSideMeters),
+            CGPoint(x: -half, y: stumpY + targetSideMeters),
         ]
     }
 }
@@ -85,6 +85,8 @@ final class CalibrationBoardDetector {
             CGPoint(x: point.x * width, y: (1 - point.y) * height)
         }
 
+        // Vision corners are the QR symbol (modules), ordered in barcode upright frame.
+        // Printed C2 keeps QR upright with stump at the module bottom edge.
         return MetricTargetObservation(
             cornersPixels: [
                 pixels(barcode.bottomLeft),
@@ -108,6 +110,7 @@ struct MetricCalibrationAccumulator {
 
     mutating func append(_ observation: MetricTargetObservation) {
         guard observation.confidence >= 0.65 else { return }
+        guard Self.isPlausibleMetricQuad(observation.cornersPixels) else { return }
         observations.append(observation)
         if observations.count > requiredFrames * 2 {
             observations.removeFirst()
@@ -121,17 +124,9 @@ struct MetricCalibrationAccumulator {
     func solve(cameraIntrinsics: simd_double3x3) throws -> CalibrationSolution? {
         guard observations.count >= requiredFrames else { return nil }
         let corners = medianCorners(observations)
-        let half = CalibrationBoardDetector.targetSideMeters / 2
-        let stumpY = MetricCalibrationProtocol.stumpEdgeOffsetMeters
-        // Ground frame: origin at middle stump on the QR bottom edge.
-        // +X right, +Y down the pitch (toward the bowler from the batsman's stump).
-        // Surrounding 3×3 visibility sheets are not part of this metric model.
-        let ground = [
-            CGPoint(x: -half, y: stumpY),
-            CGPoint(x: half, y: stumpY),
-            CGPoint(x: half, y: stumpY + CalibrationBoardDetector.targetSideMeters),
-            CGPoint(x: -half, y: stumpY + CalibrationBoardDetector.targetSideMeters),
-        ]
+        guard Self.isPlausibleMetricQuad(corners) else { return nil }
+
+        let ground = MetricCalibrationProtocol.groundCornersMeters()
         let imageToGround = try Homography.solve(source: corners, destination: ground)
         let groundToImage = try Homography.inverse(imageToGround)
         let residual = temporalCornerRMS(observations, median: corners)
@@ -139,6 +134,9 @@ struct MetricCalibrationAccumulator {
             groundToImage: groundToImage,
             intrinsics: cameraIntrinsics
         )
+        guard let cameraToWorld else { return nil }
+        // Phone is behind the stumps looking at the pitch; expect a sane height.
+        guard cameraToWorld.columns.3.z > 0.05, cameraToWorld.columns.3.z < 25 else { return nil }
 
         return CalibrationSolution(
             imageToGround: imageToGround,
@@ -153,6 +151,48 @@ struct MetricCalibrationAccumulator {
             ),
             createdAt: Date()
         )
+    }
+
+    /// Reject nonsense detections before they enter the median window.
+    static func isPlausibleMetricQuad(_ corners: [CGPoint]) -> Bool {
+        guard corners.count == 4 else { return false }
+        let sides = (0..<4).map { index in
+            hypot(
+                Double(corners[(index + 1) % 4].x - corners[index].x),
+                Double(corners[(index + 1) % 4].y - corners[index].y)
+            )
+        }
+        guard let minSide = sides.min(), let maxSide = sides.max(), minSide > 20 else { return false }
+        guard maxSide / minSide <= 1.35 else { return false }
+
+        for index in 0..<4 {
+            let prev = corners[(index + 3) % 4]
+            let corner = corners[index]
+            let next = corners[(index + 1) % 4]
+            let v1 = SIMD2(Double(prev.x - corner.x), Double(prev.y - corner.y))
+            let v2 = SIMD2(Double(next.x - corner.x), Double(next.y - corner.y))
+            let denom = max(simd_length(v1) * simd_length(v2), 1e-9)
+            let cosAngle = max(-1.0, min(1.0, simd_dot(v1, v2) / denom))
+            let degrees = acos(cosAngle) * 180 / .pi
+            if degrees < MetricCalibrationProtocol.minCornerAngleDegrees ||
+                degrees > MetricCalibrationProtocol.maxCornerAngleDegrees {
+                return false
+            }
+        }
+
+        var signs = [Double]()
+        for index in 0..<4 {
+            let a = corners[index]
+            let b = corners[(index + 1) % 4]
+            let c = corners[(index + 2) % 4]
+            let cross =
+                (Double(b.x - a.x) * Double(c.y - b.y)) -
+                (Double(b.y - a.y) * Double(c.x - b.x))
+            signs.append(cross)
+        }
+        let positive = signs.filter { $0 > 0 }.count
+        let negative = signs.filter { $0 < 0 }.count
+        return positive == 4 || negative == 4
     }
 
     private func medianCorners(_ values: [MetricTargetObservation]) -> [CGPoint] {
@@ -201,8 +241,12 @@ struct MetricCalibrationAccumulator {
         let r1 = simd_normalize(b1 * scale)
         let r2Raw = b2 * scale - simd_dot(b2 * scale, r1) * r1
         guard simd_length(r2Raw) > 1e-9 else { return nil }
-        let r2 = simd_normalize(r2Raw)
-        let r3 = simd_normalize(simd_cross(r1, r2))
+        var r2 = simd_normalize(r2Raw)
+        var r3 = simd_normalize(simd_cross(r1, r2))
+        if simd_dot(simd_cross(r1, r2), r3) < 0 {
+            r2 = -r2
+            r3 = -r3
+        }
         let translation = b3 * scale
         let worldToCamera = simd_double4x4(
             SIMD4(r1.x, r1.y, r1.z, 0),

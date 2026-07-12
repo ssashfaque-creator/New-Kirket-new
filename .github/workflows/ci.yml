@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Verify metric calibration math
+        run: python3 scripts/verify_metric_calibration_math.py
 
   native-ios:
     runs-on: macos-15
@@ -40,3 +42,13 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
+      - name: Run native calibration unit tests
+        working-directory: ios/KirketPro
+        run: |
+          xcodebuild \
+            -project KirketPro.xcodeproj \
+            -scheme KirketPro \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO \
+            test

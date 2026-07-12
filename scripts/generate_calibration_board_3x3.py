@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "calibration-board-3x3"
 
 PAYLOAD = "KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM"
+# Metric size Vision returns = QR *module* extent (quiet zone is outside this square).
 QR_MM = 160.0
+QR_BORDER_MODULES = 0  # modules fill the metric square; quiet zone drawn outside
 OVERLAP = 15.0
 A4_W, A4_H = 210.0, 297.0
 
@@ -76,15 +78,25 @@ def neighbors(sid: str) -> dict[str, str]:
 
 
 def qr_modules():
+    """QR bit matrix for the metric square.
+
+    Vision's VNBarcodeObservation corners bound the *symbol* (modules), not the
+    quiet zone. Modules must fill exactly QR_MM so targetSideMeters = 0.160 matches.
+    """
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=1,
-        border=4,
+        border=QR_BORDER_MODULES,
     )
     qr.add_data(PAYLOAD)
     qr.make(fit=True)
     return qr.get_matrix()
+
+
+def quiet_zone_mm(module_count: int) -> float:
+    """ISO quiet zone ≈ 4 modules, drawn *outside* the metric square."""
+    return 4.0 * (QR_MM / module_count)
 
 
 def esc(text: str) -> str:
@@ -272,13 +284,19 @@ def mini_map(sid: str) -> str:
     return "\n".join(parts)
 
 
-def qr_block(origin_x: float, origin_y: float) -> str:
+def qr_block(origin_x: float, origin_y: float) -> tuple[str, float]:
+    """Return (svg, quiet_zone_mm). Metric square = modules only."""
     matrix = qr_modules()
     n = len(matrix)
     module = QR_MM / n
+    qz = quiet_zone_mm(n)
     parts = [
+        # Quiet zone outside the metric square (required for scanning; not measured by Vision)
+        f'<rect x="{origin_x - qz}" y="{origin_y - qz}" width="{QR_MM + 2 * qz}" '
+        f'height="{QR_MM + 2 * qz}" fill="white" stroke="#999" stroke-width="0.25" '
+        f'stroke-dasharray="2 1.5"/>',
         f'<rect x="{origin_x}" y="{origin_y}" width="{QR_MM}" height="{QR_MM}" '
-        f'fill="white" stroke="black" stroke-width="0.4"/>'
+        f'fill="white" stroke="black" stroke-width="0.5"/>',
     ]
     for r, row in enumerate(matrix):
         for c, bit in enumerate(row):
@@ -287,20 +305,25 @@ def qr_block(origin_x: float, origin_y: float) -> str:
                     f'<rect x="{origin_x + c * module:.5f}" y="{origin_y + r * module:.5f}" '
                     f'width="{module:.5f}" height="{module:.5f}" fill="black"/>'
                 )
-    return "\n".join(parts)
+    return "\n".join(parts), qz
 
 
 def make_c2() -> str:
     """C2 QR sheet.
 
-    App geometry (CalibrationBoardDetector): the BOTTOM EDGE of the 160 mm QR
-    square is the stump line (y=0). Artwork must mark that QR bottom edge — not
-    a separate line further down the page — so printed instructions match the
-    solver.
+    App geometry (CalibrationBoardDetector / Vision):
+    - targetSideMeters = 0.160 is the *module* square Vision returns (no quiet zone).
+    - Quiet zone is printed outside that square so scale stays accurate.
+    - BOTTOM EDGE of the 160 mm module square is the stump line (y=0).
     """
+    matrix = qr_modules()
+    qz = quiet_zone_mm(len(matrix))
     qx = (A4_W - QR_MM) / 2
-    qy = 30.0
+    # Keep quiet zone clear of the header band.
+    qy = max(28.0 + qz, 36.0)
     qr_bottom = qy + QR_MM
+    qr_svg, _ = qr_block(qx, qy)
+    label_y = qr_bottom + qz + 8
     return "\n".join(
         [
             '<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">',
@@ -308,36 +331,32 @@ def make_c2() -> str:
             sheet_header("C2"),
             mini_map("C2"),
             attach_marks("C2"),
-            qr_block(qx, qy),
-            # Stump edge = QR bottom (matches STUMP_EDGE_BOTTOM / app ground frame)
+            qr_svg,
+            # Stump edge + control ruler = metric QR bottom (Vision bottom edge)
             f'<line x1="{qx}" y1="{qr_bottom}" x2="{qx+QR_MM}" y2="{qr_bottom}" '
-            f'stroke="#e11d48" stroke-width="1.6"/>',
-            f'<line x1="{qx}" y1="{qr_bottom-3}" x2="{qx}" y2="{qr_bottom+3}" '
+            f'stroke="#e11d48" stroke-width="1.8"/>',
+            f'<line x1="{qx}" y1="{qr_bottom-4}" x2="{qx}" y2="{qr_bottom+4}" '
             f'stroke="#e11d48" stroke-width="1.2"/>',
-            f'<line x1="{qx+QR_MM}" y1="{qr_bottom-3}" x2="{qx+QR_MM}" y2="{qr_bottom+3}" '
+            f'<line x1="{qx+QR_MM}" y1="{qr_bottom-4}" x2="{qx+QR_MM}" y2="{qr_bottom+4}" '
             f'stroke="#e11d48" stroke-width="1.2"/>',
-            f'<path d="M105 {qr_bottom+28} L92 {qr_bottom+10} L100 {qr_bottom+10} '
-            f'L100 {qr_bottom+2} L110 {qr_bottom+2} L110 {qr_bottom+10} L118 {qr_bottom+10} Z" '
-            f'fill="#e11d48"/>',
-            f'<text x="105" y="{qr_bottom+38}" text-anchor="middle" font-family="Arial" '
-            f'font-size="6.5" font-weight="bold">MIDDLE STUMP TOUCHES THE RED QR BOTTOM EDGE</text>',
-            f'<text x="105" y="{qr_bottom+46}" text-anchor="middle" font-family="Arial" font-size="4">'
-            "Arrow points DOWN THE PITCH · App origin = this QR bottom edge at middle stump</text>",
-            f'<text x="105" y="{qr_bottom+54}" text-anchor="middle" font-family="Arial" font-size="3.2">'
+            f'<text x="105" y="{qr_bottom - 3}" text-anchor="middle" font-family="Arial" '
+            f'font-size="3.2" fill="#e11d48" font-weight="bold">'
+            "CONTROL + STUMP EDGE — THIS RED LINE MUST MEASURE EXACTLY 160 mm</text>",
+            f'<path d="M105 {label_y + 18} L92 {label_y + 4} L100 {label_y + 4} '
+            f'L100 {qr_bottom + 2} L110 {qr_bottom + 2} L110 {label_y + 4} '
+            f'L118 {label_y + 4} Z" fill="#e11d48"/>',
+            f'<text x="105" y="{label_y + 28}" text-anchor="middle" font-family="Arial" '
+            f'font-size="5.5" font-weight="bold">MIDDLE STUMP TOUCHES THIS RED EDGE</text>',
+            f'<text x="105" y="{label_y + 35}" text-anchor="middle" font-family="Arial" font-size="3.3">'
+            "Quiet zone (dashed) is outside · Vision / app measure the 160 mm module square only</text>",
+            f'<text x="105" y="{label_y + 41}" text-anchor="middle" font-family="Arial" font-size="3">'
             f"Payload: {PAYLOAD}</text>",
-            f'<text x="105" y="{qr_bottom+60}" text-anchor="middle" font-family="Arial" font-size="3.2">'
-            f"Outer QR square = exactly {QR_MM:.0f} mm · Keep readable; not blocked by stumps</text>",
-            # Duplicate control ruler near page bottom for tape-measure check
-            f'<line x1="{qx}" y1="278" x2="{qx+QR_MM}" y2="278" stroke="black" stroke-width="1"/>',
-            f'<line x1="{qx}" y1="274" x2="{qx}" y2="282" stroke="black" stroke-width="1"/>',
-            f'<line x1="{qx+QR_MM}" y1="274" x2="{qx+QR_MM}" y2="282" stroke="black" stroke-width="1"/>',
-            '<text x="105" y="289" text-anchor="middle" font-family="Arial" font-size="4.5">'
-            "CONTROL RULER: THIS LINE MUST MEASURE EXACTLY 160 mm</text>",
-            '<text x="105" y="295" text-anchor="middle" font-family="Arial" font-size="3">'
-            "After calibration, remove all 9 sheets</text>",
+            f'<text x="105" y="{label_y + 47}" text-anchor="middle" font-family="Arial" font-size="3">'
+            "Arrow points DOWN THE PITCH · After calibration, remove all 9 sheets</text>",
             "</svg>",
         ]
     )
+
 
 
 def make_support(sid: str) -> str:
@@ -445,7 +464,11 @@ def main() -> None:
         (OUT / fname).write_text(svg, encoding="utf-8")
     matrix = qr_modules()
     print(f"Wrote {len(list(OUT.glob('*.svg')))} SVGs to {OUT}")
-    print(f"QR matrix {len(matrix)}×{len(matrix[0])} (incl. quiet zone), module={QR_MM/len(matrix):.4f} mm")
+    print(
+        f"QR modules {len(matrix)}×{len(matrix[0])} fill {QR_MM:.0f} mm "
+        f"(quiet zone {quiet_zone_mm(len(matrix)):.1f} mm outside); "
+        f"module={QR_MM/len(matrix):.4f} mm"
+    )
 
 
 if __name__ == "__main__":

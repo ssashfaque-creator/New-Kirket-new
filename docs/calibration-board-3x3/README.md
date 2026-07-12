@@ -2,7 +2,7 @@
 
 Temporary large calibration board made from **9× A4** sheets. Place → calibrate → remove.
 
-The app measures **only sheet C2’s 160 mm QR** (same payload as the single-sheet target). The other eight sheets improve visibility from behind the stumps; they are not part of the pose model.
+The app measures **only sheet C2’s 160 mm QR modules** (same payload as the single-sheet target). Quiet zone is printed **outside** that square so Apple Vision’s corners match the 0.160 m side used by the solver. The other eight sheets improve visibility from behind the stumps; they are not part of the pose model.
 
 ## Print
 

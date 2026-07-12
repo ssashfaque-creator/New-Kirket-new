@@ -45,7 +45,7 @@ Print the **3×3 A4 board**:
 Rules:
 
 1. Print all nine sheets at **100% / Actual Size**, not “Fit to page”. Overlap at the dashed attach marks (15 mm); do not butt edges.
-2. Verify the printed control line on **C2** is exactly 160 mm.
+2. Verify the printed control line on **C2** (red QR bottom edge = module square) is exactly 160 mm. Quiet zone is outside that square.
 3. Place the assembled board flat with **C2** front-middle facing the camera (not blocked by the stumps).
 4. The **red bottom edge of the 160 mm QR on C2** touches the middle stump (app origin).
 5. The arrow points down the pitch.
