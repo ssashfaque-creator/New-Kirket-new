@@ -38,19 +38,19 @@ Xcode/device validation is still required.
 
 ## Metric target
 
-Print:
+Print the **3×3 A4 board**:
 
-`docs/KIRKET_METRIC_TARGET_A4.svg`
+`docs/calibration-board-3x3/` (assembly notes in that folder). Sheet **C2** carries the same 160 mm QR/payload as before.
 
 Rules:
 
-1. Print at **100% / Actual Size**, not “Fit to page”.
-2. Verify the printed control line is exactly 160 mm.
-3. Place the sheet flat.
-4. The labeled stump edge touches the middle stump.
+1. Print all nine sheets at **100% / Actual Size**, not “Fit to page”. Overlap at the dashed attach marks (15 mm); do not butt edges.
+2. Verify the printed control line on **C2** (red QR bottom edge = module square) is exactly 160 mm. Quiet zone is outside that square.
+3. Place the assembled board flat with **C2** front-middle facing the camera (not blocked by the stumps).
+4. The **red bottom edge of the 160 mm QR on C2** touches the middle stump (app origin).
 5. The arrow points down the pitch.
-6. Keep the whole QR target visible for at least 15 stable calibration frames.
-7. Remove the target only after calibration; do not move the phone.
+6. Keep the whole QR on **C2** visible for at least 15 stable calibration frames.
+7. Remove all sheets only after calibration; do not move the phone.
 
 Calibration is accepted only when temporal corner RMS is at most 2.5 pixels.
 

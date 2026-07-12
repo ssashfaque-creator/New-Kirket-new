@@ -15,7 +15,8 @@ struct CalibrationSolution: Sendable {
 
     var isMeasurementReady: Bool {
         reprojectionErrorPixels.isFinite &&
-        reprojectionErrorPixels <= 2.5 &&
+        reprojectionErrorPixels <= MetricCalibrationProtocol.maxTemporalCornerRMSPixels &&
+        cameraToWorld != nil &&
         abs(simd_determinant(imageToGround)) > 1e-10
     }
 }

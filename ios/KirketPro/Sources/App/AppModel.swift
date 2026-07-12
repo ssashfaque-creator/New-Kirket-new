@@ -6,7 +6,7 @@ final class AppModel: ObservableObject {
     @Published var stage: KirketStage = .calibrate
     @Published var calibration: CalibrationSolution?
     @Published var latestMeasurement: NativeShotMeasurement?
-    @Published var status = "Print and place the Kirket metric target to begin."
+    @Published var status = "Print the 3×3 A4 board, place C2 QR at the middle stump, then calibrate."
     @Published var isBusy = false
 
     let camera = HighSpeedCameraController()
@@ -18,8 +18,8 @@ final class AppModel: ObservableObject {
     func acceptCalibration(_ solution: CalibrationSolution) {
         calibration = solution
         status = solution.isMeasurementReady
-            ? "Metric calibration accepted. Lock the phone mount before capture."
-            : "Calibration residual is too high. Reposition the target and retry."
+            ? "Metric calibration accepted. Remove all nine sheets, lock the phone mount, then capture."
+            : "Calibration residual is too high. Reposition the C2 QR and retry."
         if solution.isMeasurementReady {
             stage = .capture
         }

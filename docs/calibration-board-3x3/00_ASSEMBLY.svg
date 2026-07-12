@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">
+<rect width="210" height="297" fill="white"/>
+<text x="105" y="18" text-anchor="middle" font-family="Arial" font-size="8" font-weight="bold">KIRKET CALIBRATION BOARD — 3×3 A4 ASSEMBLY</text>
+<text x="105" y="28" text-anchor="middle" font-family="Arial" font-size="4">Print all 9 sheets at 100% · Assemble with overlap · Calibrate · Remove</text>
+<text x="105" y="36" text-anchor="middle" font-family="Arial" font-size="3.5">View from camera behind the stumps (front row = closest to camera)</text>
+<rect x="28" y="50" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="53.0" y="78" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">A1</text>
+<text x="53.0" y="90" text-anchor="middle" font-family="Arial" font-size="3">BACK-LEFT</text>
+<rect x="82" y="50" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="107.0" y="78" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">A2</text>
+<text x="107.0" y="90" text-anchor="middle" font-family="Arial" font-size="3">BACK-CENTER</text>
+<rect x="136" y="50" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="161.0" y="78" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">A3</text>
+<text x="161.0" y="90" text-anchor="middle" font-family="Arial" font-size="3">BACK-RIGHT</text>
+<rect x="28" y="124" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="53.0" y="152" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">B1</text>
+<text x="53.0" y="164" text-anchor="middle" font-family="Arial" font-size="3">MID-LEFT</text>
+<rect x="82" y="124" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="107.0" y="152" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">B2</text>
+<text x="107.0" y="164" text-anchor="middle" font-family="Arial" font-size="3">MID-CENTER</text>
+<rect x="136" y="124" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="161.0" y="152" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">B3</text>
+<text x="161.0" y="164" text-anchor="middle" font-family="Arial" font-size="3">MID-RIGHT</text>
+<rect x="28" y="198" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="53.0" y="226" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">C1</text>
+<text x="53.0" y="238" text-anchor="middle" font-family="Arial" font-size="3">FRONT-LEFT</text>
+<rect x="82" y="198" width="50" height="70" fill="#fee2e2" stroke="#111" stroke-width="0.6"/>
+<text x="107.0" y="226" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">C2</text>
+<text x="107.0" y="238" text-anchor="middle" font-family="Arial" font-size="3">FRONT-CENTER (QR)</text>
+<text x="107.0" y="250" text-anchor="middle" font-family="Arial" font-size="3.5" fill="#e11d48" font-weight="bold">160 mm QR HERE</text>
+<rect x="136" y="198" width="50" height="70" fill="#f9fafb" stroke="#111" stroke-width="0.6"/>
+<text x="161.0" y="226" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">C3</text>
+<text x="161.0" y="238" text-anchor="middle" font-family="Arial" font-size="3">FRONT-RIGHT</text>
+<text x="109.0" y="280" text-anchor="middle" font-family="Arial" font-size="4">↑ toward bowler / back of board</text>
+<text x="109.0" y="288" text-anchor="middle" font-family="Arial" font-size="4" font-weight="bold">↓ camera / behind stumps / FRONT</text>
+<text x="12" y="300" font-family="Arial" font-size="3.3">1. Print sheets A1–C3 (plus this page) at 100% / Actual Size. Verify C2 ruler = 160 mm.</text>
+<text x="12" y="306" font-family="Arial" font-size="3.3">2. Overlap is 15 mm — NOT edge-to-edge. Place the ON-TOP sheet so its red edge sits on the dashed attach line.</text>
+<text x="12" y="312" font-family="Arial" font-size="3.3">3. Assemble back row A1–A3 first, then mid B1–B3 on top of A, then front C1–C3 on top of B. Center sheets on top of sides.</text>
+<text x="12" y="318" font-family="Arial" font-size="3.3">4. Place board so C2 (QR) is front-middle, readable by the camera, and not blocked by the stumps.</text>
+<text x="12" y="324" font-family="Arial" font-size="3.3">5. Middle stump touches the RED BOTTOM EDGE of the 160 mm QR on C2 (app origin). Arrow down pitch.</text>
+<text x="12" y="330" font-family="Arial" font-size="3.3">6. Calibrate in the app until accepted, then remove all nine sheets without moving the phone.</text>
+</svg>

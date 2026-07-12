@@ -42,12 +42,11 @@ Run tests in Xcode with **Product → Test**. The generated project includes
 
 ## First native measurement test
 
-1. Print `docs/KIRKET_METRIC_TARGET_A4.svg` at 100%.
-2. Verify the 160 mm control ruler with a physical ruler.
-3. Place the target flat with the marked edge at the middle stump and arrow
-   pointing down the pitch.
+1. Print the **3×3 A4 board** in `docs/calibration-board-3x3/` at 100% (see that folder’s README). Sheet **C2** has the 160 mm QR on the front-middle (camera side, clear of the stumps).
+2. Verify the 160 mm control ruler on **C2** with a physical ruler.
+3. Place the assembled board flat so the **red bottom edge of the 160 mm QR on C2** touches the middle stump and the arrow points down the pitch.
 4. Calibrate until 15 stable frames are collected and RMS is ≤2.5 px.
-5. Remove the target without moving the phone.
+5. Remove all nine sheets without moving the phone.
 6. Configure 4K/120 or 1080p/240, lock focus/exposure, and record one delivery.
 7. Select the exact contact frame.
 8. Tap the ball; a custom model is optional until trained.

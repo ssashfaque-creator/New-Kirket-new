@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Verify metric calibration math
+        run: python3 scripts/verify_metric_calibration_math.py
 
   native-ios:
     runs-on: macos-15
@@ -40,3 +42,20 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
+      - name: Run native calibration unit tests
+        working-directory: ios/KirketPro
+        run: |
+          DEST=$(
+            xcrun simctl list devices available \
+              | sed -n 's/.*\(iPhone[^()]*\) (\([A-F0-9-]*\)).*/\1|\2/p' \
+              | head -n 1
+          )
+          NAME="${DEST%%|*}"
+          echo "Using simulator: $NAME"
+          xcodebuild \
+            -project KirketPro.xcodeproj \
+            -scheme KirketPro \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=$NAME" \
+            CODE_SIGNING_ALLOWED=NO \
+            test
