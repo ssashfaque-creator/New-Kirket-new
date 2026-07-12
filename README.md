@@ -142,7 +142,7 @@ Native implementation:
 
 - [`ios/KirketPro/README.md`](ios/KirketPro/README.md)
 - [native build/TestFlight guide](docs/NATIVE_IOS_TESTFLIGHT.md)
-- printable target: [`docs/KIRKET_METRIC_TARGET_A4.svg`](docs/KIRKET_METRIC_TARGET_A4.svg)
+- printable target (3×3 A4): [`docs/calibration-board-3x3/`](docs/calibration-board-3x3/) (single-sheet fallback: [`docs/KIRKET_METRIC_TARGET_A4.svg`](docs/KIRKET_METRIC_TARGET_A4.svg))
 - model training/export: [`ml/README.md`](ml/README.md)
 
 See [`docs/INSTALL_IPHONE.md`](docs/INSTALL_IPHONE.md) for HTTPS deployment,
