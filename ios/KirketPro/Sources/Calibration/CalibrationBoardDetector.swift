@@ -11,9 +11,49 @@ struct MetricTargetObservation: Sendable {
     let imageSize: CGSize
 }
 
-final class CalibrationBoardDetector {
+/// Single source of truth for how the metric target is printed and placed.
+/// The 3×3 A4 board is a visibility/assembly aid; only sheet C2's QR is measured.
+enum MetricCalibrationProtocol {
     static let payload = "KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM"
+    /// Outer printed QR square, including quiet zone (meters).
     static let targetSideMeters = 0.160
+    /// Sheet ID that carries the QR on the 3×3 board (front-middle, camera side).
+    static let qrSheetId = "C2"
+    /// Vertical offset from QR bottom edge to middle stump. Must stay 0:
+    /// ground y=0 is the QR bottom edge at the stump.
+    static let stumpEdgeOffsetMeters = 0.0
+
+    static let printSteps: [String] = [
+        "Print the 3×3 A4 board (docs/calibration-board-3x3) at 100% / Actual Size.",
+        "Verify the 160 mm control ruler on sheet C2 with a physical ruler.",
+        "Assemble with 15 mm overlap using the dashed attach marks (sheets stick on top).",
+    ]
+
+    static let placeSteps: [String] = [
+        "Place the board so C2 is front-middle, facing the camera, not blocked by the stumps.",
+        "Middle stump touches the red bottom edge of the 160 mm QR on C2 (not a lower page mark).",
+        "Arrow on C2 points down the pitch. Keep the complete QR visible.",
+    ]
+
+    static let afterAcceptSteps: [String] = [
+        "Accept calibration only when RMS ≤ 2.5 px after 15 stable frames.",
+        "Remove all nine sheets without moving the phone, then capture.",
+    ]
+
+    static var inAppProtocolLines: [String] {
+        [
+            "1. Print the 3×3 A4 board at 100%. Verify the 160 mm ruler on sheet C2.",
+            "2. Assemble with overlap marks; place C2 front-middle, clear of the stumps.",
+            "3. Middle stump touches the red bottom edge of the 160 mm QR. Arrow down the pitch.",
+            "4. Hold still for 15 stable frames. Accept only if RMS ≤ 2.5 px.",
+            "5. Remove all nine sheets. Do not move the phone after calibration.",
+        ]
+    }
+}
+
+final class CalibrationBoardDetector {
+    static let payload = MetricCalibrationProtocol.payload
+    static let targetSideMeters = MetricCalibrationProtocol.targetSideMeters
 
     func detect(
         pixelBuffer: CVPixelBuffer,
@@ -82,12 +122,15 @@ struct MetricCalibrationAccumulator {
         guard observations.count >= requiredFrames else { return nil }
         let corners = medianCorners(observations)
         let half = CalibrationBoardDetector.targetSideMeters / 2
-        // The target's bottom edge touches the middle stump. +Y points down the pitch.
+        let stumpY = MetricCalibrationProtocol.stumpEdgeOffsetMeters
+        // Ground frame: origin at middle stump on the QR bottom edge.
+        // +X right, +Y down the pitch (toward the bowler from the batsman's stump).
+        // Surrounding 3×3 visibility sheets are not part of this metric model.
         let ground = [
-            CGPoint(x: -half, y: 0),
-            CGPoint(x: half, y: 0),
-            CGPoint(x: half, y: CalibrationBoardDetector.targetSideMeters),
-            CGPoint(x: -half, y: CalibrationBoardDetector.targetSideMeters),
+            CGPoint(x: -half, y: stumpY),
+            CGPoint(x: half, y: stumpY),
+            CGPoint(x: half, y: stumpY + CalibrationBoardDetector.targetSideMeters),
+            CGPoint(x: -half, y: stumpY + CalibrationBoardDetector.targetSideMeters),
         ]
         let imageToGround = try Homography.solve(source: corners, destination: ground)
         let groundToImage = try Homography.inverse(imageToGround)

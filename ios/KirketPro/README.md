@@ -47,7 +47,7 @@ Rules:
 1. Print all nine sheets at **100% / Actual Size**, not “Fit to page”. Overlap at the dashed attach marks (15 mm); do not butt edges.
 2. Verify the printed control line on **C2** is exactly 160 mm.
 3. Place the assembled board flat with **C2** front-middle facing the camera (not blocked by the stumps).
-4. The labeled stump edge on **C2** touches the middle stump.
+4. The **red bottom edge of the 160 mm QR on C2** touches the middle stump (app origin).
 5. The arrow points down the pitch.
 6. Keep the whole QR on **C2** visible for at least 15 stable calibration frames.
 7. Remove all sheets only after calibration; do not move the phone.

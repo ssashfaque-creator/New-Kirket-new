@@ -2,7 +2,7 @@
 
 Temporary large calibration board made from **9× A4** sheets. Place → calibrate → remove.
 
-The app detector is unchanged: sheet **C2** carries the same **160 mm** QR and payload as the single-sheet target.
+The app measures **only sheet C2’s 160 mm QR** (same payload as the single-sheet target). The other eight sheets improve visibility from behind the stumps; they are not part of the pose model.
 
 ## Print
 
@@ -35,12 +35,13 @@ Sheets overlap by **15 mm**. The upper sheet is taped **on top** of the lower on
 2. Tape mid row **B1–B3** onto the A row (front-of-pair on top).
 3. Tape front row **C1–C3** onto the B row; **C2** ends on top in front-center.
 
-## On the pitch
+## On the pitch (must match the app)
 
 1. Place the assembled board so **C2** faces the camera.
-2. Middle stump touches the stump-edge mark on **C2**; arrow points down the pitch.
-3. Calibrate.
-4. **Remove all nine sheets** before recording (do not move the phone).
+2. **Middle stump touches the red bottom edge of the 160 mm QR on C2** — that edge is the app origin (`STUMP_EDGE_BOTTOM`).
+3. Arrow points down the pitch.
+4. Calibrate in the native app (≥15 stable frames, RMS ≤ 2.5 px).
+5. **Remove all nine sheets** before recording (do not move the phone).
 
 ## Regenerate
 

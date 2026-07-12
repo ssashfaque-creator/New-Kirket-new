@@ -37,5 +37,6 @@
 <text x="12" y="306" font-family="Arial" font-size="3.3">2. Overlap is 15 mm — NOT edge-to-edge. Place the ON-TOP sheet so its red edge sits on the dashed attach line.</text>
 <text x="12" y="312" font-family="Arial" font-size="3.3">3. Assemble back row A1–A3 first, then mid B1–B3 on top of A, then front C1–C3 on top of B. Center sheets on top of sides.</text>
 <text x="12" y="318" font-family="Arial" font-size="3.3">4. Place board so C2 (QR) is front-middle, readable by the camera, and not blocked by the stumps.</text>
-<text x="12" y="324" font-family="Arial" font-size="3.3">5. Align middle stump to the stump-edge mark on C2. Run calibration. Then remove all papers.</text>
+<text x="12" y="324" font-family="Arial" font-size="3.3">5. Middle stump touches the RED BOTTOM EDGE of the 160 mm QR on C2 (app origin). Arrow down pitch.</text>
+<text x="12" y="330" font-family="Arial" font-size="3.3">6. Calibrate in the app until accepted, then remove all nine sheets without moving the phone.</text>
 </svg>

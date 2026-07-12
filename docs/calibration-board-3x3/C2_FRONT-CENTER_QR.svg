@@ -578,11 +578,14 @@
 <rect x="153.78049" y="170.48780" width="3.90244" height="3.90244" fill="black"/>
 <rect x="157.68293" y="170.48780" width="3.90244" height="3.90244" fill="black"/>
 <rect x="161.58537" y="170.48780" width="3.90244" height="3.90244" fill="black"/>
-<text x="105" y="197.0" text-anchor="middle" font-family="Arial" font-size="3.2">Payload: KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM</text>
-<text x="105" y="202.0" text-anchor="middle" font-family="Arial" font-size="3.2">Outer QR square = exactly 160 mm · Keep readable; not blocked by stumps</text>
-<path d="M105 248 L92 228 L100 228 L100 215 L110 215 L110 228 L118 228 Z" fill="#e11d48"/>
-<text x="105" y="258" text-anchor="middle" font-family="Arial" font-size="7" font-weight="bold">MIDDLE STUMP TOUCHES THIS EDGE</text>
-<text x="105" y="266" text-anchor="middle" font-family="Arial" font-size="4.5">Arrow points DOWN THE PITCH · C2 = front-middle (camera side)</text>
+<line x1="25.0" y1="190.0" x2="185.0" y2="190.0" stroke="#e11d48" stroke-width="1.6"/>
+<line x1="25.0" y1="187.0" x2="25.0" y2="193.0" stroke="#e11d48" stroke-width="1.2"/>
+<line x1="185.0" y1="187.0" x2="185.0" y2="193.0" stroke="#e11d48" stroke-width="1.2"/>
+<path d="M105 218.0 L92 200.0 L100 200.0 L100 192.0 L110 192.0 L110 200.0 L118 200.0 Z" fill="#e11d48"/>
+<text x="105" y="228.0" text-anchor="middle" font-family="Arial" font-size="6.5" font-weight="bold">MIDDLE STUMP TOUCHES THE RED QR BOTTOM EDGE</text>
+<text x="105" y="236.0" text-anchor="middle" font-family="Arial" font-size="4">Arrow points DOWN THE PITCH · App origin = this QR bottom edge at middle stump</text>
+<text x="105" y="244.0" text-anchor="middle" font-family="Arial" font-size="3.2">Payload: KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM</text>
+<text x="105" y="250.0" text-anchor="middle" font-family="Arial" font-size="3.2">Outer QR square = exactly 160 mm · Keep readable; not blocked by stumps</text>
 <line x1="25.0" y1="278" x2="185.0" y2="278" stroke="black" stroke-width="1"/>
 <line x1="25.0" y1="274" x2="25.0" y2="282" stroke="black" stroke-width="1"/>
 <line x1="185.0" y1="274" x2="185.0" y2="282" stroke="black" stroke-width="1"/>

@@ -38,4 +38,21 @@ final class HomographyTests: XCTestCase {
         ]
         XCTAssertThrowsError(try Homography.solve(source: line, destination: line))
     }
+
+    func testMetricProtocolMatchesDetectorAssumptions() {
+        XCTAssertEqual(
+            MetricCalibrationProtocol.payload,
+            "KIRKET_METRIC_TARGET_V1_SIZE_160MM_STUMP_EDGE_BOTTOM"
+        )
+        XCTAssertEqual(MetricCalibrationProtocol.targetSideMeters, 0.160, accuracy: 1e-12)
+        XCTAssertEqual(MetricCalibrationProtocol.stumpEdgeOffsetMeters, 0.0, accuracy: 1e-12)
+        XCTAssertEqual(MetricCalibrationProtocol.qrSheetId, "C2")
+        XCTAssertEqual(CalibrationBoardDetector.payload, MetricCalibrationProtocol.payload)
+        XCTAssertEqual(
+            CalibrationBoardDetector.targetSideMeters,
+            MetricCalibrationProtocol.targetSideMeters,
+            accuracy: 1e-12
+        )
+        XCTAssertFalse(MetricCalibrationProtocol.inAppProtocolLines.isEmpty)
+    }
 }

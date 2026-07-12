@@ -16,7 +16,7 @@ struct NativeCalibrationView: View {
                     .stroke(pipeline.isTargetVisible ? .green : .yellow, lineWidth: 3)
                     .aspectRatio(1, contentMode: .fit)
                     .padding(42)
-                Text(pipeline.isTargetVisible ? "Hold still while corners average" : "Fit the full QR target inside the square")
+                Text(pipeline.isTargetVisible ? "Hold still while corners average" : "Fit the full 160 mm QR (sheet C2) inside the square")
                     .font(.caption.bold())
                     .padding(8)
                     .background(.black.opacity(0.75), in: Capsule())
@@ -41,10 +41,11 @@ struct NativeCalibrationView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Professional calibration protocol").font(.headline)
-                Text("1. Print the bundled target at 100% and verify its 160 mm ruler.")
-                Text("2. Place it flat. The marked edge touches the middle stump.")
-                Text("3. Point the arrow down the pitch and keep the complete QR visible.")
-                Text("4. Do not move the phone after calibration.")
+                ForEach(Array(MetricCalibrationProtocol.inAppProtocolLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                }
+                Text("The app measures only the 160 mm QR on C2. The other eight sheets are for visibility.")
+                    .foregroundStyle(.secondary)
             }
             .font(.footnote)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,8 +66,8 @@ struct NativeCalibrationView: View {
         .task {
             pipeline.onSolution = { solution in
                 model.status = solution.isMeasurementReady
-                    ? "Stable metric target solved. Review residual and accept."
-                    : "Target moved too much. Hold it still and reset."
+                    ? "Stable C2 QR solved. Review residual, accept, then remove all nine sheets."
+                    : "C2 QR moved too much. Hold still and reset."
             }
             model.camera.calibrationFrameHandler = { sampleBuffer in
                 pipeline.consume(sampleBuffer)

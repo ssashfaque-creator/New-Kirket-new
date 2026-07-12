@@ -291,8 +291,16 @@ def qr_block(origin_x: float, origin_y: float) -> str:
 
 
 def make_c2() -> str:
+    """C2 QR sheet.
+
+    App geometry (CalibrationBoardDetector): the BOTTOM EDGE of the 160 mm QR
+    square is the stump line (y=0). Artwork must mark that QR bottom edge — not
+    a separate line further down the page — so printed instructions match the
+    solver.
+    """
     qx = (A4_W - QR_MM) / 2
     qy = 30.0
+    qr_bottom = qy + QR_MM
     return "\n".join(
         [
             '<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">',
@@ -301,15 +309,25 @@ def make_c2() -> str:
             mini_map("C2"),
             attach_marks("C2"),
             qr_block(qx, qy),
-            f'<text x="105" y="{qy+QR_MM+7}" text-anchor="middle" font-family="Arial" font-size="3.2">'
+            # Stump edge = QR bottom (matches STUMP_EDGE_BOTTOM / app ground frame)
+            f'<line x1="{qx}" y1="{qr_bottom}" x2="{qx+QR_MM}" y2="{qr_bottom}" '
+            f'stroke="#e11d48" stroke-width="1.6"/>',
+            f'<line x1="{qx}" y1="{qr_bottom-3}" x2="{qx}" y2="{qr_bottom+3}" '
+            f'stroke="#e11d48" stroke-width="1.2"/>',
+            f'<line x1="{qx+QR_MM}" y1="{qr_bottom-3}" x2="{qx+QR_MM}" y2="{qr_bottom+3}" '
+            f'stroke="#e11d48" stroke-width="1.2"/>',
+            f'<path d="M105 {qr_bottom+28} L92 {qr_bottom+10} L100 {qr_bottom+10} '
+            f'L100 {qr_bottom+2} L110 {qr_bottom+2} L110 {qr_bottom+10} L118 {qr_bottom+10} Z" '
+            f'fill="#e11d48"/>',
+            f'<text x="105" y="{qr_bottom+38}" text-anchor="middle" font-family="Arial" '
+            f'font-size="6.5" font-weight="bold">MIDDLE STUMP TOUCHES THE RED QR BOTTOM EDGE</text>',
+            f'<text x="105" y="{qr_bottom+46}" text-anchor="middle" font-family="Arial" font-size="4">'
+            "Arrow points DOWN THE PITCH · App origin = this QR bottom edge at middle stump</text>",
+            f'<text x="105" y="{qr_bottom+54}" text-anchor="middle" font-family="Arial" font-size="3.2">'
             f"Payload: {PAYLOAD}</text>",
-            f'<text x="105" y="{qy+QR_MM+12}" text-anchor="middle" font-family="Arial" font-size="3.2">'
+            f'<text x="105" y="{qr_bottom+60}" text-anchor="middle" font-family="Arial" font-size="3.2">'
             f"Outer QR square = exactly {QR_MM:.0f} mm · Keep readable; not blocked by stumps</text>",
-            '<path d="M105 248 L92 228 L100 228 L100 215 L110 215 L110 228 L118 228 Z" fill="#e11d48"/>',
-            '<text x="105" y="258" text-anchor="middle" font-family="Arial" font-size="7" font-weight="bold">'
-            "MIDDLE STUMP TOUCHES THIS EDGE</text>",
-            '<text x="105" y="266" text-anchor="middle" font-family="Arial" font-size="4.5">'
-            "Arrow points DOWN THE PITCH · C2 = front-middle (camera side)</text>",
+            # Duplicate control ruler near page bottom for tape-measure check
             f'<line x1="{qx}" y1="278" x2="{qx+QR_MM}" y2="278" stroke="black" stroke-width="1"/>',
             f'<line x1="{qx}" y1="274" x2="{qx}" y2="282" stroke="black" stroke-width="1"/>',
             f'<line x1="{qx+QR_MM}" y1="274" x2="{qx+QR_MM}" y2="282" stroke="black" stroke-width="1"/>',
@@ -407,7 +425,8 @@ def make_assembly() -> str:
         "3. Assemble back row A1–A3 first, then mid B1–B3 on top of A, then front C1–C3 on top of B. "
         "Center sheets on top of sides.",
         "4. Place board so C2 (QR) is front-middle, readable by the camera, and not blocked by the stumps.",
-        "5. Align middle stump to the stump-edge mark on C2. Run calibration. Then remove all papers.",
+        "5. Middle stump touches the RED BOTTOM EDGE of the 160 mm QR on C2 (app origin). Arrow down pitch.",
+        "6. Calibrate in the app until accepted, then remove all nine sheets without moving the phone.",
     ]
     for line in instructions:
         parts.append(f'<text x="12" y="{yy}" font-family="Arial" font-size="3.3">{esc(line)}</text>')
