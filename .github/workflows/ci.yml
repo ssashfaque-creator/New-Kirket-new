@@ -45,10 +45,17 @@ jobs:
       - name: Run native calibration unit tests
         working-directory: ios/KirketPro
         run: |
+          DEST=$(
+            xcrun simctl list devices available \
+              | sed -n 's/.*\(iPhone[^()]*\) (\([A-F0-9-]*\)).*/\1|\2/p' \
+              | head -n 1
+          )
+          NAME="${DEST%%|*}"
+          echo "Using simulator: $NAME"
           xcodebuild \
             -project KirketPro.xcodeproj \
             -scheme KirketPro \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination "platform=iOS Simulator,name=$NAME" \
             CODE_SIGNING_ALLOWED=NO \
             test
